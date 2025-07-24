@@ -1,0 +1,27 @@
+
+fn incr(x) -> isz {
+  return x + 1;
+}
+
+fn squared(x) -> isz {
+  return x * x;
+}
+
+fn cubed(x) -> isz {
+  return x * x * x;
+}
+
+fn add(a, b) -> isz {
+  return a + b;
+}
+
+fn main() {
+  let x := 2;
+  let y := (x + 1) |> cubed;
+  y |> printf(`cubed(%v) -> %v\n', x + 1);
+  // printf(`%v', add(5, squared(x)));
+  x |> squared
+    |> add(5)
+    |> printf(`math_stuff(%v) -> %v\n', x);
+}
+

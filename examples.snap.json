@@ -1,0 +1,22 @@
+{
+  "hello_world": {
+    "go": "ok",
+    "js": "ok"
+  },
+  "math_ops": {
+    "go": "ok",
+    "js": "ok"
+  },
+  "pipe_op": {
+    "go": "ok",
+    "js": "ok"
+  },
+  "fizzbuzz": {
+    "go": "ok",
+    "js": "ok"
+  },
+  "fib": {
+    "go": "ok",
+    "js": "ok"
+  }
+}

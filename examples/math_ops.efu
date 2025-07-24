@@ -1,0 +1,7 @@
+
+fn main() {
+  let x := 34 / 2;
+  let y := x *2 +34;
+  printnf(`x := %v; y := %v;', x, y);
+}
+

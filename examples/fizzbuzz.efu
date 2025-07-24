@@ -1,0 +1,30 @@
+
+let target := 15;
+
+fn fizzbuz(n) -> isz {
+  if (n > target) return n;
+
+  let rem3 := n % 3;
+  let rem5 := n % 5;
+
+  if (rem3 == 0) {
+    printf(`Fizz');
+  }
+
+  if (rem5 == 0) {
+    printf(`Buzz');
+  }
+
+  if (rem3 != 0) {
+    if (rem5 != 0) printf(`%v', n);
+  }
+
+  printf(`\n');
+
+  return fizzbuz(n + 1);
+}
+
+fn main() {
+  fizzbuz(1);
+}
+

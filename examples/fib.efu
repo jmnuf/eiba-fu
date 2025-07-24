@@ -1,0 +1,12 @@
+
+fn fib(n: usz) -> usz {
+  if (n <= 1) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+
+fn main() -> void {
+  let x:usz = 25;
+  let n := x |> fib;
+  printf(`fib(%v) <- %v\n', x, n);
+}
+
