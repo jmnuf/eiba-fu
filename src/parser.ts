@@ -722,14 +722,14 @@ class SimpParser {
       parse_statement,
       expect_symbol_next,
     } = this;
-    if (expect_symbol_next('(')) return null;
+    // if (expect_symbol_next('(')) return null;
     const cond = parse_expr();
     if (!cond) return null;
     if (cond.kind == AstNodeKind.FuncDecl) {
       logger.error(cond.pos, 'Cannot set a function declaration as an if statement\'s condition');
       return null;
     }
-    if (expect_symbol_next(')')) return null;
+    // if (expect_symbol_next(')')) return null;
     const body: IfElseNode['body'] = [];
     let tok = lexer.peek();
     if (tok.kind == TokenKind.Symbol && tok.sym == '{') {
