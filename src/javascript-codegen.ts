@@ -9,6 +9,8 @@ import {
   type TargetCodeGenSetupConfig,
 } from './utils';
 
+const get_indent_from_lvl = (lvl: number) => lvl <= 0 ? '' : Array.from({ length: lvl }).map(() => '  ').join('');
+
 class JavascriptCodegen implements TargetCodeGen {
   private cg: CodeGen | null;
 
@@ -56,7 +58,7 @@ class JavascriptCodegen implements TargetCodeGen {
   }
 
   node_to_code(node: AstNode | null, indent_lvl = 0): string | Error {
-    const indent = indent_lvl <= 0 ? '' : Array.from({ length: indent_lvl }).map(() => '  ').join('');
+    const indent = get_indent_from_lvl(indent_lvl);
     if (!node) return `${indent}null`;
     const node_to_code = this.node_to_code.bind(this);
 
@@ -137,14 +139,39 @@ class JavascriptCodegen implements TargetCodeGen {
           args.push(ac);
         }
         const body = [] as string[];
-        for (const b of node.body) {
-          const bc = node_to_code(b, indent_lvl + 1);
-          if (typeof bc != 'string') return bc;
-          body.push(bc);
+        let full_body: string;
+        const last_stmt = node.body[node.body.length - 1]!
+        const tailcalling = (last_stmt.kind == 'fncal' && last_stmt.name == node.name && last_stmt.args.length == node.args.length);
+
+        if (tailcalling) {
+          for (const b of node.body.slice(0, node.body.length - 1)) {
+            const bc = node_to_code(b, indent_lvl + 2);
+            if (typeof bc != 'string') return bc;
+            body.push(bc);
+          }
+
+          const body_indent = get_indent_from_lvl(indent_lvl + 1);
+
+          for (let i = 0; i < node.args.length; ++i) {
+            const a = node.args[i]!.name;
+            const b = node_to_code(last_stmt.args[i]!);
+            if (typeof b != 'string') return b;
+            body.push(get_indent_from_lvl(indent_lvl + 2) + `${a} = ${b}`);
+          }
+
+          full_body = pipe(body.join(';\n') + ';', b => `${body_indent}while (true) {\n${b}\n${body_indent}}`);
+        } else {
+          for (const b of node.body) {
+            const bc = node_to_code(b, indent_lvl + (tailcalling ? 2 : 1));
+            if (typeof bc != 'string') return bc;
+            body.push(bc);
+          }
+
+          full_body = body.join(';\n') + ';';
         }
 
         code = pipe(
-          [node.name, args.join(', '), body.join(';\n')] as const,
+          [node.name, args.join(', '), full_body] as const,
           ([name, args, body]) => `function* ${name}(${args}) {\n${body}\n${indent}}`,
         );
       } break;

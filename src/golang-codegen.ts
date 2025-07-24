@@ -11,6 +11,8 @@ import type {
 } from './utils';
 import { compiler_logger, ensure_valid_output_path_from_input_path, get_current_line, pipe } from './utils';
 
+const get_indent_from_lvl = (lvl: number) => lvl == 0 ? '' : Array.from({ length: lvl }).map(() => '\t').join('');;
+
 function replace_print_calls(n: AstNode | null | undefined): boolean {
   if (!n) return false;
 
@@ -212,7 +214,7 @@ class GoCodegen implements TargetCodeGen {
   }
 
   node_to_code(node: AstNode | null, indent_lvl = 0): string | Error {
-    const indent = indent_lvl == 0 ? '' : Array.from({ length: indent_lvl }).map(() => '\t').join('');
+    const indent = get_indent_from_lvl(indent_lvl);
     if (!node) return `${indent}nil`;
     const node_to_code = this.node_to_code.bind(this);
 
@@ -225,7 +227,7 @@ class GoCodegen implements TargetCodeGen {
           if (typeof code != 'string') return code;
           args.push(code);
         }
-        return `${indent}${node.name}(${args.join(', ')})`;
+        return indent + `${node.name}(${args.join(', ')})`;
       }
 
       case AstNodeKind.FuncDecl: {
@@ -235,19 +237,44 @@ class GoCodegen implements TargetCodeGen {
           if (typeof ac != 'string') return ac;
           args.push(ac);
         }
-        const body = [] as string[];
-        for (const b of node.body) {
-          const bc = node_to_code(b, indent_lvl + 1);
-          if (typeof bc != 'string') return bc;
-          body.push(bc);
+
+        const body: string[] = []
+        let full_body: string;
+        const last_stmt = node.body[node.body.length - 1]!
+        const tailcalling = (last_stmt.kind == 'fncal' && last_stmt.name == node.name && last_stmt.args.length == node.args.length);
+
+        if (tailcalling) {
+          for (const b of node.body.slice(0, node.body.length - 1)) {
+            const bc = node_to_code(b, indent_lvl + 2);
+            if (typeof bc != 'string') return bc;
+            body.push(bc);
+          }
+
+          const body_indent = get_indent_from_lvl(indent_lvl + 1);
+
+          for (let i = 0; i < node.args.length; ++i) {
+            const a = node.args[i]!.name;
+            const b = node_to_code(last_stmt.args[i]!);
+            if (typeof b != 'string') return b;
+            body.push(get_indent_from_lvl(indent_lvl + 2) + `${a} = ${b}`);
+          }
+
+          full_body = pipe(body.join('\n'), b => `${body_indent}for true {\n${b}\n${body_indent}}`);
+        } else {
+          for (const b of node.body) {
+            const bc = node_to_code(b, indent_lvl + (tailcalling ? 2 : 1));
+            if (typeof bc != 'string') return bc;
+            body.push(bc);
+          }
+
+          full_body = body.join('\n');
         }
+
         const ret = node.returns == 'void' || node.returns == '()' ? '' : ' ' + node.returns;
-        return `${indent}func ${node.name}(${args.join(', ')})${ret} {\n${body.join('\n')}\n${indent}}`;
+        return indent + `func ${node.name}(${args.join(', ')})${ret} {\n${full_body}\n${indent}}`;
       }
 
-      case AstNodeKind.FuncDclArg: {
-        return `${indent}${node.name} ${node.type}`;
-      }
+      case AstNodeKind.FuncDclArg: return indent + `${node.name} ${node.type}`;
 
       case AstNodeKind.Literal: {
         if (node.type == 'int') {
@@ -256,7 +283,7 @@ class GoCodegen implements TargetCodeGen {
         return indent + JSON.stringify(node.value);
       }
 
-      case AstNodeKind.Binop: return node_to_code(node.lhs) + node.op + node_to_code(node.rhs);
+      case AstNodeKind.Binop: return indent + node_to_code(node.lhs) + node.op + node_to_code(node.rhs);
       case AstNodeKind.Keyword: return indent + node.word + (node.expr ? ' ' + node_to_code(node.expr) : '');
       case AstNodeKind.Ident: return indent + node.ident;
 
@@ -268,7 +295,7 @@ class GoCodegen implements TargetCodeGen {
           return indent + `${node.name} := ${init}`;
         }
         const type_name = node.type.name == '()' ? 'int' : node.type.name;
-        return `${indent}var ${node.name} ${type_name} = ${init}`;
+        return indent + `var ${node.name} ${type_name} = ${init}`;
       }
 
       case AstNodeKind.IfElse: {
@@ -301,7 +328,7 @@ class GoCodegen implements TargetCodeGen {
       case AstNodeKind.Expr: return pipe(
         node.item,
         node_to_code,
-        expr => typeof expr == 'string' ? `(${expr})` : expr,
+        expr => typeof expr == 'string' ? (indent + `(${expr})`) : expr,
       );
 
     }
