@@ -5,6 +5,13 @@ import type { AstNode, Parser, VarDeclNode, FnDeclNode } from './parser';
 
 export type Prettify<T> = { [K in keyof T]: T[K] } & unknown;
 
+export type Result<T, E> = { ok: true; value: T; } | { ok: false; error: E; };
+
+export const Result = Object.freeze({
+  Ok: <T, E>(value: T): Result<T, E> => ({ ok: true, value }),
+  Err: <T, E>(error: E): Result<T, E> => ({ ok: false, error }),
+});
+
 export type LogLevel = 'ERROR' | 'INFO' | 'WARN';
 
 export type CursorPosition = { line: number; column: number; };
