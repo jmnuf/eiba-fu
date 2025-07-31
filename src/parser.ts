@@ -596,13 +596,17 @@ class SimpParser {
     }
 
     let tok = l.peek();
-    while (tok.kind != TokenKind.EOF) {
-      if (tok.kind == TokenKind.Symbol && tok.sym == ')') break;
-      const expr = parse_expr();
-      if (!expr) return null;
-      args.push(expr);
-      if (expect_symbol_next(')', ',')) return null;
-      tok = l.get_token() as SymToken;
+    if (tok.kind != TokenKind.Symbol || tok.sym != ')') {
+      while (tok.kind != TokenKind.EOF) {
+        if (tok.kind == TokenKind.Symbol && tok.sym == ')') break;
+        const expr = parse_expr();
+        if (!expr) return null;
+        args.push(expr);
+        if (expect_symbol_next(')', ',')) return null;
+        tok = l.get_token() as SymToken;
+      }
+    } else {
+      tok = l.next();
     }
     if (tok.kind == TokenKind.EOF) {
       logger.error(ident.pos, 'Unexpectede end of file while parsing function call');
