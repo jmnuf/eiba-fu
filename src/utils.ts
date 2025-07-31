@@ -15,6 +15,7 @@ export const Result = Object.freeze({
 export type LogLevel = 'ERROR' | 'INFO' | 'WARN';
 
 export type CursorPosition = { line: number; column: number; };
+export type SourcePosition = { file: string; line: number; column: number; };
 
 export const create_parser_logger = (file_path: string) => ({
   info(pos: CursorPosition, ...stuff: any[]) {
