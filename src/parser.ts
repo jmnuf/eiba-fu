@@ -983,9 +983,14 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
       ident => `Ident{${ident}}`
     );
 
+    case AstNodeKind.FuncDecl: return pipe(
+      [node.name, node.args.map(node_debug_fmt).join(', '), node.body.map(node_debug_fmt).join(', ')] as const,
+      ([name, args, body]) => `FnDecl{${name}, Args{${args}}, Body{${body}}}`,
+    );
+
     case AstNodeKind.FuncCall: return pipe(
       [node.name, node.args.map(node_debug_fmt).join(', ')] as const,
-      ([name, args]) => `Call{${name}, (${args})}`,
+      ([name, args]) => `FnCall{${name}, (${args})}`,
     );
 
     case AstNodeKind.Binop: return pipe(
