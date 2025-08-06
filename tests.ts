@@ -13,6 +13,7 @@ const Result = {
     return { ok: false, error };
   },
 } as const;
+
 const trySync = <T, E = unknown>(fn: () => T): Result<T, E> => {
   try {
     return Result.Ok(fn());
@@ -20,6 +21,7 @@ const trySync = <T, E = unknown>(fn: () => T): Result<T, E> => {
     return Result.Err(e as E);
   }
 };
+
 const tryAsync = async <T, E = unknown>(fn: () => Promise<T>): Promise<Result<T, E>> => {
   try {
     return Result.Ok(await fn());
@@ -27,6 +29,36 @@ const tryAsync = async <T, E = unknown>(fn: () => Promise<T>): Promise<Result<T,
     return Result.Err(e as E);
   }
 }
+
+type Mismatcher = {
+  code: false | {
+    expected: number;
+    received: number;
+  };
+  stdout: false | { kind: 'size'; r: number; e: number; } | {
+    kind: 'bytes';
+    diff: Array<[number, [number[], number[]]]>;
+  };
+  stderr: false | { kind: 'size'; r: number; e: number; } | {
+    kind: 'bytes';
+    diff: Array<[number, [number[], number[]]]>;
+  };
+};
+
+type TestResult = {
+  exit_code: number;
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+};
+
+type TestCheckResult = { t: 'ok' | 'untested' } | {
+  t: 'failure';
+  mismatch: Mismatcher;
+} | {
+  t: 'malformed-snapshot';
+  error: string;
+};
+
 
 const $ = Bun.$.cwd(__dirname).throws(true);
 
@@ -127,14 +159,9 @@ async function main(argv: string[]): Promise<number> {
   }
   log.info('Tests to run:', source_paths.map(([t, _]) => JSON.stringify(t)).join(', '));
 
-  type TestResult = {
-    exit_code: number;
-    stdout: Uint8Array;
-    stderr: Uint8Array;
-  };
-  const test_results: Record<string, TestResult> = {};
   let recording_is_ok = true;
 
+  let output_buffer = '';
   for (const [test_name, file_path] of source_paths) {
     let output;
     if (quiet) {
@@ -147,38 +174,30 @@ async function main(argv: string[]): Promise<number> {
       stdout: output.stdout,
       stderr: output.stderr,
     };
-    if (!recording) {
-      test_results[test_name] = result;
-      continue;
-    }
+    const snapshot_file_name = test_name + '.snap.bif';
+    if (recording) {
+      log.info(`Saving output of test ${test_name} to ${snapshot_file_name}...`);
+      const snap_result = await write_output_snapshot(snapshot_file_name, result);
 
-    const snap_file_name = test_name + '.snap.bif';
-    log.info(`Saving output of test ${test_name} to ${snap_file_name}...`);
-    const snap_result = await tryAsync<void, Error>(async () => {
-      const snapshot = Bun.file(npath.join(TESTS_FOLDER_PATH, snap_file_name));
-      if (await snapshot.exists()) await snapshot.delete();
-      const writer = snapshot.writer();
-      writer.start();
-      {
-        writer.write(new TextEncoder().encode(`:i exit_code ${result.exit_code.toString(10)}\n`));
-        writer.write(new TextEncoder().encode(`:b stdout ${result.stdout.byteLength}\n`));
-        writer.write(result.stdout);
-        writer.write(Uint8Array.from([10]));
-        writer.write(new TextEncoder().encode(`:b stderr ${result.stderr.byteLength}\n`));
-        writer.write(result.stderr);
-        writer.write(Uint8Array.from([10]));
+      if (snap_result.ok) {
+        log.info('Snapshot saved in', snapshot_file_name);
+        continue;
       }
-      await writer.end();
-    });
 
-    if (snap_result.ok) {
-      log.info('Snapshot saved in', snap_file_name);
+      log.error(snap_result.error.message);
+      console.error(snap_result.error);
+      recording_is_ok = false;
       continue;
     }
 
-    log.error(snap_result.error.message);
-    console.error(snap_result.error);
-    recording_is_ok = false;
+    const check_result = await check_output_to_snapshot(snapshot_file_name, result);
+    if (!check_result.ok) {
+      log.error(check_result.error.message);
+      console.log(check_result.error);
+      continue;
+    }
+    if (output_buffer.length > 0) output_buffer += '\n- ';
+    output_buffer += test_check_to_string(test_name, check_result.value);
   }
 
   if (recording) {
@@ -190,215 +209,8 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  type Mismatcher = {
-    code: false | {
-      expected: number;
-      received: number;
-    };
-    stdout: false | { kind: 'size'; r: number; e: number; } | {
-      kind: 'bytes';
-      diff: Array<[number, [number[], number[]]]>;
-    };
-    stderr: false | { kind: 'size'; r: number; e: number; } | {
-      kind: 'bytes';
-      diff: Array<[number, [number[], number[]]]>;
-    };
-  };
-
-  // type TestCheckResultT = 'ok' | 'untested' | 'failure' | 'malformed-snapshot';
-  type TestCheckResult = { t: 'ok' | 'untested' } | {
-    t: 'failure';
-    mismatch: Mismatcher;
-  } | {
-    t: 'malformed-snapshot';
-    error: string;
-  };
-  const result = await tryAsync<Record<string, TestCheckResult>, Error>(async () => {
-    const check_result: Record<string, TestCheckResult> = {};
-    for (const test of Object.keys(test_results)) {
-      const test_result = test_results[test]!;
-      const snap_file_name = test + '.snap.bif';
-      log.info('Saving output of test', test, 'to snapshot file', snap_file_name);
-      const snapshot = Bun.file(npath.join(TESTS_FOLDER_PATH, snap_file_name));
-      if (!await snapshot.exists()) {
-        check_result[test] = { t: 'untested' };
-        continue;
-      }
-      const reader = bif_reader(await snapshot.bytes());
-      const result = trySync((): Mismatcher => {
-        const mismatched: Mismatcher = {
-          code: false,
-          stdout: false,
-          stderr: false,
-        };
-        while (true) {
-          const step = reader.next();
-          if (step.done) return mismatched;
-          const field = step.value;
-          if (field.kind == 'int' && field.name == 'exit_code') {
-            const expected_exit_code = field.value;
-            if (test_result.exit_code != expected_exit_code) {
-              mismatched.code = {
-                expected: expected_exit_code,
-                received: test_result.exit_code,
-              };
-            } else {
-              mismatched.code = false;
-            }
-            continue;
-          }
-
-          if (field.kind == 'blob') {
-            if (field.name == 'stdout') {
-              if (field.value.length != test_result.stdout.length) {
-                mismatched.stdout = {
-                  kind: 'size',
-                  e: field.value.length,
-                  r: test_result.stdout.length,
-                };
-                continue;
-              }
-
-              const diff: Array<[number, [number[], number[]]]> = [];
-              for (let i = 0; i < field.value.length; ++i) {
-                if (field.value[i]! === test_result.stdout[i]!) continue;
-                const expected: number[] = [];
-                const received: number[] = [];
-                let si = i, ni = i;
-                for (let j = i; j < field.value.length; ni = ++j) {
-                  const a = field.value[j]!;
-                  const b = test_result.stdout[j]!;
-                  if (a === b) break;
-                  expected.push(a);
-                  received.push(b);
-                }
-                diff.push([si, [expected, received]]);
-                i = ni;
-              }
-
-              if (diff.length === 0) {
-                mismatched.stdout = false;
-                continue;
-              }
-
-              mismatched.stdout = {
-                kind: 'bytes',
-                diff,
-              };
-              continue;
-            }
-
-            if (field.name == 'stderr') {
-              if (field.value.length != test_result.stderr.length) {
-                mismatched.stderr = {
-                  kind: 'size',
-                  e: field.value.length,
-                  r: test_result.stdout.length,
-                };
-                continue;
-              }
-
-              const diff: Array<[number, [number[], number[]]]> = [];
-              for (let i = 0; i < field.value.length; ++i) {
-                if (field.value[i]! === test_result.stderr[i]!) continue;
-                const expected: number[] = [];
-                const received: number[] = [];
-                let ni = i;
-                let si = i;
-                for (let j = i; j < field.value.length; ni = ++j) {
-                  const a = field.value[j]!;
-                  const b = test_result.stderr[j]!;
-                  if (a == b) break;
-                  expected.push(a);
-                  received.push(b);
-                }
-                diff.push([si, [expected, received]]);
-                i = ni;
-              }
-
-              if (diff.length === 0) {
-                mismatched.stderr = false;
-                continue;
-              }
-
-              mismatched.stderr = {
-                kind: 'bytes',
-                diff,
-              };
-              continue;
-            }
-          }
-        }
-      });
-      if (!result.ok) {
-        check_result[test] = {
-          t: 'malformed-snapshot',
-          error: result.error instanceof Error ? result.error.message : String(result.error),
-        };
-        continue;
-      }
-      const mismatch = result.value;
-      if (mismatch.code === false && mismatch.stderr === false && mismatch.stdout === false) {
-        check_result[test] = { t: 'ok' };
-      } else {
-        check_result[test] = { t: 'failure', mismatch };
-      }
-    }
-    return check_result;
-  });
-
-  if (!result.ok) {
-    log.error(result.error.message);
-    console.error(result.error);
-    return 1;
-  }
-
-  const checked_test = result.value;
-  for (const test_name of Object.keys(checked_test)) {
-    const test = checked_test[test_name]!;
-    if (test.t !== 'failure') {
-      if (test.t == 'malformed-snapshot') {
-        console.log(`${test_name}: ${test.t}\n    ${test.error}`);
-        continue;
-      }
-      console.log(`${test_name}: ${test.t}`);
-      continue;
-    }
-    const buf = [`${test_name}: ${test.t}`];
-    if (test.mismatch.code !== false) {
-      const { expected, received } = test.mismatch.code;
-      buf.push(`Got exit code '${received}' but expected '${expected}'`);
-    }
-    if (test.mismatch.stdout !== false) {
-      const ms = test.mismatch.stdout;
-      if (ms.kind == 'size') {
-        const { e, r } = ms;
-        buf.push(`StdOut is of a different size than expected. Generated size is ${r} but expected ${e}`);
-      } else {
-        buf.push('StdOut differs from the expected');
-        let subbuf: string[] = [];
-        for (const [index, [exp, got]] of ms.diff) {
-          subbuf.push(`From index ${index}:\n            Expected: [${exp.join(', ')}]\n            Received: [${got.join(', ')}]`);
-        }
-        buf.push(subbuf.join('\n        '));
-      }
-    }
-    if (test.mismatch.stderr !== false) {
-      const ms = test.mismatch.stderr;
-      if (ms.kind == 'size') {
-        const { e, r } = ms;
-        buf.push(`StdErr is of a different size than expected. Generated size is ${r} but expected ${e}`);
-      } else {
-        buf.push('StdErr differs from the expected');
-        let subbuf: string[] = [];
-        for (const [index, [exp, got]] of ms.diff) {
-          subbuf.push(`From index ${index}:\n            Expected: [${exp.join(', ')}]\n            Received: [${got.join(', ')}]`);
-        }
-        buf.push(subbuf.join('\n        '));
-      }
-    }
-    console.log(buf.join('\n    '));
-  }
+  log.info('Test Results:');
+  console.log('- ' + output_buffer);
 
   return 0;
 }
@@ -409,8 +221,175 @@ process.exit(await main(Bun.argv.slice(2)));
 
 
 
+function test_check_to_string(test_name: string, test: TestCheckResult): string {
+  if (test.t !== 'failure') {
+    if (test.t == 'malformed-snapshot') {
+      return `${test_name}: ${test.t}\n    ${test.error}`;
+    }
+    return `${test_name}: ${test.t}`;
+  }
+  const buf = [`${test_name}: ${test.t}`];
+  if (test.mismatch.code !== false) {
+    const { expected, received } = test.mismatch.code;
+    buf.push(`Got exit code '${received}' but expected '${expected}'`);
+  }
+  if (test.mismatch.stdout !== false) {
+    const ms = test.mismatch.stdout;
+    if (ms.kind == 'size') {
+      const { e, r } = ms;
+      buf.push(`StdOut is of a different size than expected. Generated size is ${r} but expected ${e}`);
+    } else {
+      buf.push('StdOut differs from the expected');
+      let subbuf: string[] = [];
+      for (const [index, [exp, got]] of ms.diff) {
+        subbuf.push(`From index ${index}:\n            Expected: [${exp.join(', ')}]\n            Received: [${got.join(', ')}]`);
+      }
+      buf.push(subbuf.join('\n        '));
+    }
+  }
+  if (test.mismatch.stderr !== false) {
+    const ms = test.mismatch.stderr;
+    if (ms.kind == 'size') {
+      const { e, r } = ms;
+      buf.push(`StdErr is of a different size than expected. Generated size is ${r} but expected ${e}`);
+    } else {
+      buf.push('StdErr differs from the expected');
+      let subbuf: string[] = [];
+      for (const [index, [exp, got]] of ms.diff) {
+        subbuf.push(`From index ${index}:\n            Expected: [${exp.join(', ')}]\n            Received: [${got.join(', ')}]`);
+      }
+      buf.push(subbuf.join('\n        '));
+    }
+  }
+  return buf.join('\n    ');
+}
 
 
+
+function write_output_snapshot(snapshot_file_name: string, result: TestResult) {
+  return tryAsync<void, Error>(async () => {
+    const snapshot = Bun.file(npath.join(TESTS_FOLDER_PATH, snapshot_file_name));
+    if (await snapshot.exists()) await snapshot.delete();
+    const writer = snapshot.writer();
+    writer.start();
+    {
+      writer.write(new TextEncoder().encode(`:i exit_code ${result.exit_code.toString(10)}\n`));
+      writer.write(new TextEncoder().encode(`:b stdout ${result.stdout.byteLength}\n`));
+      writer.write(result.stdout);
+      writer.write(Uint8Array.from([10]));
+      writer.write(new TextEncoder().encode(`:b stderr ${result.stderr.byteLength}\n`));
+      writer.write(result.stderr);
+      writer.write(Uint8Array.from([10]));
+    }
+    await writer.end();
+  });
+}
+
+
+function calculate_diff_between_bytes(received_bytes: Uint8Array, expected_bytes: Uint8Array) {
+  const diff: Array<[number, [number[], number[]]]> = [];
+  for (let i = 0; i < expected_bytes.length; ++i) {
+    if (expected_bytes[i] === received_bytes[i]) continue;
+    const expected: number[] = [];
+    const received: number[] = [];
+    let si = i, ni = i;
+    for (let j = i; j < expected_bytes.length; ni = ++j) {
+      const a = expected_bytes[j]!;
+      const b = received_bytes[j]!;
+      if (a === b) break;
+      expected.push(a);
+      received.push(b);
+    }
+    diff.push([si, [expected, received]]);
+    i = ni;
+  }
+  return diff;
+}
+
+
+function check_output_to_snapshot(snapshot_file_name: string, test_result: TestResult) {
+  return tryAsync<TestCheckResult, Error>(async () => {
+    const snapshot = Bun.file(npath.join(TESTS_FOLDER_PATH, snapshot_file_name));
+    if (!await snapshot.exists()) {
+      return { t: 'untested' };
+    }
+    const reader = bif_reader(await snapshot.bytes());
+    const result = trySync((): Mismatcher => {
+      const mismatched: Mismatcher = {
+        code: false,
+        stdout: false,
+        stderr: false,
+      };
+      while (true) {
+        const step = reader.next();
+        if (step.done) return mismatched;
+        const field = step.value;
+        if (field.kind == 'int' && field.name == 'exit_code') {
+          const expected_exit_code = field.value;
+          if (test_result.exit_code != expected_exit_code) {
+            mismatched.code = {
+              expected: expected_exit_code,
+              received: test_result.exit_code,
+            };
+          } else {
+            mismatched.code = false;
+          }
+          continue;
+        }
+
+        if (field.kind == 'blob') {
+          if (field.name == 'stdout') {
+            if (field.value.length != test_result.stdout.length) {
+              mismatched.stdout = { kind: 'size', e: field.value.length, r: test_result.stdout.length };
+              continue;
+            }
+
+            const diff = calculate_diff_between_bytes(test_result.stdout, field.value);
+
+            if (diff.length === 0) {
+              mismatched.stdout = false;
+              continue;
+            }
+
+            mismatched.stdout = { kind: 'bytes', diff };
+            continue;
+          }
+
+          if (field.name == 'stderr') {
+            if (field.value.length != test_result.stderr.length) {
+              mismatched.stderr = { kind: 'size', e: field.value.length, r: test_result.stdout.length };
+              continue;
+            }
+
+            const diff = calculate_diff_between_bytes(test_result.stderr, field.value)
+
+            if (diff.length === 0) {
+              mismatched.stderr = false;
+              continue;
+            }
+
+            mismatched.stderr = { kind: 'bytes', diff };
+            continue;
+          }
+        }
+      }
+    });
+
+    if (!result.ok) {
+      return {
+        t: 'malformed-snapshot',
+        error: result.error instanceof Error ? result.error.message : String(result.error),
+      };
+    }
+
+    const mismatch = result.value;
+    if (mismatch.code === false && mismatch.stderr === false && mismatch.stdout === false) {
+      return { t: 'ok' };
+    } else {
+      return { t: 'failure', mismatch };
+    }
+  });
+}
 
 
 function* bif_reader(bytes: Uint8Array) {
