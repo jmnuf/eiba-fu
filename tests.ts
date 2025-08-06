@@ -133,6 +133,8 @@ async function main(argv: string[]): Promise<number> {
     stderr: Uint8Array;
   };
   const test_results: Record<string, TestResult> = {};
+  let recording_is_ok = true;
+
   for (const [test_name, file_path] of source_paths) {
     let output;
     if (quiet) {
@@ -140,43 +142,54 @@ async function main(argv: string[]): Promise<number> {
     } else {
       output = await log.cmd`${compiler_path} -debug-ir -o ${TESTS_FOLDER_PATH + '/'} ${file_path}`.nothrow();
     }
-    test_results[test_name] = {
+    const result: TestResult = {
       exit_code: output.exitCode,
       stdout: output.stdout,
       stderr: output.stderr,
     };
+    if (!recording) {
+      test_results[test_name] = result;
+      continue;
+    }
+
+    const snap_file_name = test_name + '.snap.bif';
+    log.info(`Saving output of test ${test_name} to ${snap_file_name}...`);
+    const snap_result = await tryAsync<void, Error>(async () => {
+      const snapshot = Bun.file(npath.join(TESTS_FOLDER_PATH, snap_file_name));
+      if (await snapshot.exists()) await snapshot.delete();
+      const writer = snapshot.writer();
+      writer.start();
+      {
+        writer.write(new TextEncoder().encode(`:i exit_code ${result.exit_code.toString(10)}\n`));
+        writer.write(new TextEncoder().encode(`:b stdout ${result.stdout.byteLength}\n`));
+        writer.write(result.stdout);
+        writer.write(Uint8Array.from([10]));
+        writer.write(new TextEncoder().encode(`:b stderr ${result.stderr.byteLength}\n`));
+        writer.write(result.stderr);
+        writer.write(Uint8Array.from([10]));
+      }
+      await writer.end();
+    });
+
+    if (snap_result.ok) {
+      log.info('Snapshot saved in', snap_file_name);
+      continue;
+    }
+
+    log.error(snap_result.error.message);
+    console.error(snap_result.error);
+    recording_is_ok = false;
   }
 
   if (recording) {
-    const result = await tryAsync<void, Error>(async () => {
-      for (const test of Object.keys(test_results)) {
-        const snap_file_name = test + '.snap.bif';
-        log.info('Saving output of test', test, 'to snapshot file', snap_file_name);
-        const snapshot = Bun.file(npath.join(TESTS_FOLDER_PATH, snap_file_name));
-        if (await snapshot.exists()) await snapshot.delete();
-        const result = test_results[test]!;
-        const writer = snapshot.writer();
-        writer.start();
-        {
-          writer.write(new TextEncoder().encode(`:i exit_code ${result.exit_code.toString(10)}\n`));
-          writer.write(new TextEncoder().encode(`:b stdout ${result.stdout.byteLength}\n`));
-          writer.write(result.stdout);
-          writer.write(Uint8Array.from([10]));
-          writer.write(new TextEncoder().encode(`:b stderr ${result.stderr.byteLength}\n`));
-          writer.write(result.stderr);
-          writer.write(Uint8Array.from([10]));
-        }
-        await writer.end();
-        log.info('Snapshot saved in', snap_file_name);
-      }
-    });
-    if (!result.ok) {
-      log.error(result.error.message);
+    if (!recording_is_ok) {
+      log.error('Some snapshots failed to be recorded...');
       return 1;
     }
     log.info('All snapshots saved succesfully');
     return 0;
   }
+
   type Mismatcher = {
     code: false | {
       expected: number;
@@ -191,6 +204,7 @@ async function main(argv: string[]): Promise<number> {
       diff: Array<[number, [number[], number[]]]>;
     };
   };
+
   // type TestCheckResultT = 'ok' | 'untested' | 'failure' | 'malformed-snapshot';
   type TestCheckResult = { t: 'ok' | 'untested' } | {
     t: 'failure';
@@ -412,7 +426,6 @@ function* bif_reader(bytes: Uint8Array) {
   const BLOB_FIELD_DELIM = 0x62;   // same as `encoder.encode('b')[0]!;`
   const ASCII_INT_0 = 0x30;        // same as `encoder.encode('0')[0]!;`
   const ASCII_INT_9 = 0x39;        // same as `encoder.encode('9')[0]!;`
-  const ASCII_DASH = 0x2D;         // same as `encoder.encode('9')[0]!;`
 
   const read_name = () => {
     const data: number[] = [];
