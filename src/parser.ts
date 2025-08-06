@@ -992,6 +992,12 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
       ([name, args, body]) => `FnDecl{${name}, Args{${args}}, Body{${body}}}`,
     );
 
+    case AstNodeKind.VarDecl: return pipe(
+      node.init ? node_debug_fmt(node.init) : '',
+      init => [node.name, init] as const,
+      ([name, init]) => `VarDecl{${name}, Init(${init})}`,
+    );
+
     case AstNodeKind.FuncCall: return pipe(
       [node.name, node.args.map(node_debug_fmt).join(', ')] as const,
       ([name, args]) => `FnCall{${name}, (${args})}`,
@@ -999,7 +1005,7 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
 
     case AstNodeKind.Binop: return pipe(
       [node_debug_fmt(node.lhs), node.op, node_debug_fmt(node.rhs)] as const,
-      ([lhs, op, rhs]) => `BinOp{${lhs}, ${op}, ${rhs}}`,
+      ([lhs, op, rhs]) => `BinOp{'${op}', ${lhs}, ${rhs}}`,
     );
 
     case AstNodeKind.Expr: return pipe(
