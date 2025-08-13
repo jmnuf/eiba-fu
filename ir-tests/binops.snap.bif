@@ -1,0 +1,7 @@
+:i exit_code 0
+:b stdout 104
+VarDecl{foo, Init(BinOp{'+', Literal{5}, BinOp{'-', BinOp{'*', Literal{3}, Literal{2}}, Literal{1}}})}
+
+
+:b stderr 0
+

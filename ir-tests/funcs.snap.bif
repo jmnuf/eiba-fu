@@ -1,0 +1,9 @@
+:i exit_code 0
+:b stdout 285
+FnDecl{foo, Args{}, Body{Keyword{return, (Literal{69})}}}
+FnDecl{bar, Args{}, Body{Keyword{return, (Literal{420})}}}
+FnDecl{main, Args{}, Body{VarDecl{x, Init(FnCall{foo, ()})}, VarDecl{y, Init(FnCall{bar, ()})}, FnCall{printnf, (Literal{"foo = %v; bar = %v"}, Ident{x}, Ident{y})}}}
+
+
+:b stderr 0
+

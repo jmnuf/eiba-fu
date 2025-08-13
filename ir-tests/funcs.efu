@@ -1,0 +1,15 @@
+
+fn foo() -> u8 {
+  return 69;
+}
+
+fn bar() -> usz {
+  return 420;
+}
+
+fn main() {
+  let x := foo();
+  let y := bar();
+  printnf(`foo = %v; bar = %v', x, y);
+}
+

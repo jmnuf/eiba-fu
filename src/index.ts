@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 import { Lex } from "./lexer";
-import { Parse, type AstNode } from './parser';
+import { node_debug_fmt, Parse, type AstNode } from './parser';
 import { compiler_logger, get_current_line, type TargetCodeGen } from "./utils";
 
 function dir_exists(path: string) {
@@ -16,6 +16,7 @@ function dir_exists(path: string) {
 type CliArgs = {
   run: boolean;
   help: boolean;
+  emit_ir: boolean;
   target: 'javascript' | 'golang';
   runtime: 'node' | 'bun' | 'deno';
   output: string;
@@ -24,6 +25,7 @@ type CliArgs = {
 const opt: CliArgs = {
   run: false,
   help: false,
+  emit_ir: false,
   output: './build/',
   target: 'golang',
   runtime: 'node',
@@ -35,6 +37,7 @@ function usage() {
   console.log('   -out <output-path>   --- Specify output path for transpiled code. Defaults to ./build/ (abbrv: -o)');
   console.log('   -run                 --- Attempt to run code after transpiling/compiling (abbrv: -r)');
   console.log('   -runtime             --- Specify what runtime to use when target is js. Defaults to node');
+  console.log('   -debug-ir            --- Emit a debug IR representation, stops regular output production');
   console.log('   -help                --- Display this help menu (abbrv: -h)');
 }
 
@@ -66,6 +69,11 @@ for (let i = 0; i < args.length; ++i) {
     }
 
     opt.output = out;
+    continue;
+  }
+
+  if (arg == '-debug-ir') {
+    opt.emit_ir = true;
     continue;
   }
 
@@ -161,6 +169,16 @@ while (node?.kind !== 'eof') {
 if (errored) {
   console.error('Parsing failed');
   process.exit(1);
+}
+
+if (opt.emit_ir) {
+  let buf = '';
+  for (const node of top_level) {
+    const str = node_debug_fmt(node);
+    buf += str + '\n';
+  }
+  console.log(buf);
+  process.exit(0);
 }
 
 const target_codegen = await (async (t: CliArgs['target']): Promise<TargetCodeGen | null> => {

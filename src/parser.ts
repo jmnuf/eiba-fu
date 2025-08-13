@@ -596,13 +596,17 @@ class SimpParser {
     }
 
     let tok = l.peek();
-    while (tok.kind != TokenKind.EOF) {
-      if (tok.kind == TokenKind.Symbol && tok.sym == ')') break;
-      const expr = parse_expr();
-      if (!expr) return null;
-      args.push(expr);
-      if (expect_symbol_next(')', ',')) return null;
-      tok = l.get_token() as SymToken;
+    if (tok.kind != TokenKind.Symbol || tok.sym != ')') {
+      while (tok.kind != TokenKind.EOF) {
+        if (tok.kind == TokenKind.Symbol && tok.sym == ')') break;
+        const expr = parse_expr();
+        if (!expr) return null;
+        args.push(expr);
+        if (expect_symbol_next(')', ',')) return null;
+        tok = l.get_token() as SymToken;
+      }
+    } else {
+      tok = l.next();
     }
     if (tok.kind == TokenKind.EOF) {
       logger.error(ident.pos, 'Unexpectede end of file while parsing function call');
@@ -983,14 +987,25 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
       ident => `Ident{${ident}}`
     );
 
+    case AstNodeKind.FuncDecl: return pipe(
+      [node.name, node.args.map(node_debug_fmt).join(', '), node.body.map(node_debug_fmt).join(', ')] as const,
+      ([name, args, body]) => `FnDecl{${name}, Args{${args}}, Body{${body}}}`,
+    );
+
+    case AstNodeKind.VarDecl: return pipe(
+      node.init ? node_debug_fmt(node.init) : '',
+      init => [node.name, init] as const,
+      ([name, init]) => `VarDecl{${name}, Init(${init})}`,
+    );
+
     case AstNodeKind.FuncCall: return pipe(
       [node.name, node.args.map(node_debug_fmt).join(', ')] as const,
-      ([name, args]) => `Call{${name}, (${args})}`,
+      ([name, args]) => `FnCall{${name}, (${args})}`,
     );
 
     case AstNodeKind.Binop: return pipe(
       [node_debug_fmt(node.lhs), node.op, node_debug_fmt(node.rhs)] as const,
-      ([lhs, op, rhs]) => `BinOp{${lhs}, ${op}, ${rhs}}`,
+      ([lhs, op, rhs]) => `BinOp{'${op}', ${lhs}, ${rhs}}`,
     );
 
     case AstNodeKind.Expr: return pipe(
