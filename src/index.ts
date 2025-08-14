@@ -1,12 +1,13 @@
-import fs from 'node:fs';
+import { readdir, mkdir } from 'node:fs/promises';
 
 import { Lex } from "./lexer";
 import { node_debug_fmt, Parse, type AstNode } from './parser';
 import { compiler_logger, get_current_line, type TargetCodeGen } from "./utils";
+import { check_types, create_global_context, get_type, get_type_name, type FuncType } from './typechecker';
 
-function dir_exists(path: string) {
+async function dir_exists(path: string) {
   try {
-    fs.readdirSync(path);
+    await readdir(path);
     return true;
   } catch {
     return false;
@@ -64,7 +65,7 @@ for (let i = 0; i < args.length; ++i) {
     }
 
     out = out.replaceAll('\\', '/');
-    if (!out.endsWith('/') && dir_exists(out)) {
+    if (!out.endsWith('/') && await dir_exists(out)) {
       opt.output = out + '/';
     }
 
@@ -150,7 +151,7 @@ const lexer = Lex(content);
 const parser = Parse(input_path, lexer);
 
 let node: AstNode | null = null;
-const top_level = [] as Exclude<AstNode, { kind: 'eof' }>[];
+const program = [] as Exclude<AstNode, { kind: 'eof' }>[];
 let errored = false;
 while (node?.kind !== 'eof') {
   node = parser.parse_statement();
@@ -163,7 +164,7 @@ while (node?.kind !== 'eof') {
     break;
   }
 
-  if (node.kind != 'eof') top_level.push(node);
+  if (node.kind != 'eof') program.push(node);
 }
 
 if (errored) {
@@ -171,9 +172,48 @@ if (errored) {
   process.exit(1);
 }
 
+// const typed_program = [];
+
+{
+  const ctx = create_global_context(input_path);
+  for (const n of program) {
+    // console.log('[DEBUG] Type checking node', n.kind);
+    if (!check_types(ctx, n)) {
+      process.exit(1);
+    }
+    // const result = get_type(ctx, n);
+    // TODO: These error messages are terrible actually I think
+    // if (!result.ok) {
+    //   if (result.error) {
+    //     if (result.error === 'NULL') {
+    //       parser.logger.error(n.pos, 'Cannot type check cause something is missing');
+    //     } else {
+    //       compiler_logger.error(get_current_line(), result.error);
+    //       parser.logger.error(n.pos, 'Failed to read type of node ' + n.kind);
+    //     }
+    //   } else {
+    //     compiler_logger.error(get_current_line(), 'Reading node type failed with no message');
+    //     parser.logger.error(n.pos, 'Failed to read type of node ' + n.kind);
+    //   }
+    //   process.exit(1);
+    // }
+    // const t = result.value;
+    // if (n.kind == 'fndcl' && n.returns == '()') {
+    //   n.returns = get_type_name((t as FuncType).returns)
+    // }
+    // if (n.kind == 'vardcl' && n.type.name == '()') {
+    //   n.type.name = get_type_name(t);
+    // }
+    // console.log('[INFO] Node', n.kind, 'has type', '`' + get_type_name(result.value) + '`');
+    // typed_program.push(result.value);
+  }
+
+  // console.log('[DEBUG] Generated typed program', typed_program);
+}
+
 if (opt.emit_ir) {
   let buf = '';
-  for (const node of top_level) {
+  for (const node of program) {
     const str = node_debug_fmt(node);
     buf += str + '\n';
   }
@@ -199,7 +239,7 @@ if (!target_codegen) {
 
 errored = target_codegen.setup_codegen({
   input_path, output_path: opt.output,
-  nodes: top_level,
+  nodes: program,
   parser,
 });
 
@@ -220,11 +260,9 @@ const output_path = codegen.output_path;
 const last_slash_idx = output_path.lastIndexOf('/');
 if (last_slash_idx != -1) {
   const output_dir = output_path.substring(0, last_slash_idx);
-  if (!dir_exists(output_dir)) {
+  if (!await dir_exists(output_dir)) {
     try {
-      fs.mkdirSync(output_dir, {
-        recursive: true,
-      });
+      await mkdir(output_dir, { recursive: true });
     } catch (e) {
       console.error(e);
       process.exit(1);

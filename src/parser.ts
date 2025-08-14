@@ -51,8 +51,8 @@ export interface BinopNode {
   kind: AstNodeKindsMap['Binop'];
   pos: CursorPosition;
   op: BinopOperator;
-  lhs: AstNode;
-  rhs: AstNode;
+  lhs: SimpNode;
+  rhs: SimpNode;
 }
 
 // type PipeChainables = IdentNode | FnCallNode;
@@ -85,7 +85,7 @@ export interface KeywordNode {
   kind: AstNodeKindsMap['Keyword'];
   pos: CursorPosition;
   word: string;
-  expr: AstNode | null;
+  expr: SimpNode | null;
 }
 
 export interface VarDeclNode {
@@ -109,8 +109,8 @@ export interface IfElseNode {
   kind: AstNodeKindsMap['IfElse'];
   pos: CursorPosition;
   cond: Exclude<AstExprNode, FnDeclNode>;
-  body: Exclude<AstNode, EoFNode>[];
-  else: null | Exclude<AstNode, EoFNode>[];
+  body: SimpNode[];
+  else: null | SimpNode[];
 }
 
 export type AstNode =
@@ -127,6 +127,8 @@ export type AstNode =
   | IdentNode
   | PipeOpNode
   ;
+
+export type SimpNode = Exclude<AstNode, EoFNode | FnDArgNode>;
 
 export type AstExprNode =
   | FnDeclNode
@@ -894,6 +896,11 @@ class SimpParser {
 
 }
 
+export const is_math_operator = (op: string): op is MathOperator => MATH_BINOPS.includes(op as any);
+export const is_logic_operator = (op: string): op is LogicalOperator => LOGIC_BINOPS.includes(op as any);
+export const is_cmp_operator = (op: string): op is ComparisonOperator => CMP_BINOPS.includes(op as any);
+
+
 export function pipe_node_to_list(head: PipeOpNode) {
   const list = [];
   let node: PipeOpNode | null = head;
@@ -974,11 +981,11 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
     case AstNodeKind.Literal: return pipe(
       node.value,
       JSON.stringify,
-      val => `Literal{${val}}`,
+      val => `Literal{${val}, ${node.type}}`,
     );
 
     case AstNodeKind.Keyword: return pipe(
-      [node.word, node.expr ? node_debug_fmt(node.expr) : '()'] as const,
+      [node.word, node.expr ? node_debug_fmt(node.expr) : 'void'] as const,
       ([kword, expr]) => `Keyword{${kword}, (${expr})}`,
     );
 
@@ -988,8 +995,8 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
     );
 
     case AstNodeKind.FuncDecl: return pipe(
-      [node.name, node.args.map(node_debug_fmt).join(', '), node.body.map(node_debug_fmt).join(', ')] as const,
-      ([name, args, body]) => `FnDecl{${name}, Args{${args}}, Body{${body}}}`,
+      [node.name, node.returns, node.args.map(node_debug_fmt).join(', '), node.body.map(node_debug_fmt).join(', ')] as const,
+      ([name, ret, args, body]) => `FnDecl{${name}, Return(${ret}), Args{${args}}, Body{${body}}}`,
     );
 
     case AstNodeKind.VarDecl: return pipe(

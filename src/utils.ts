@@ -105,3 +105,23 @@ export function ensure_valid_output_path_from_input_path(input_path: string, out
 
   return output_path;
 }
+
+class UnreachableError extends Error {
+  constructor(message: string) {
+    super('[UNREACHABLE] ' + message);
+  }
+}
+
+class TodoError extends Error {
+  constructor(message: string) {
+    super('[TODO] ' + message);
+  }
+}
+
+export function unreachable(...data: any[]): never {
+  throw new UnreachableError(data.join(' '));
+}
+export function $todo(...data: [any, ...any[]]): never {
+  throw new TodoError(data.join(' '));
+}
+

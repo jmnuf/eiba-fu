@@ -1,9 +1,9 @@
 
-fn foo() -> u8 {
+fn foo() -> ui8 {
   return 69;
 }
 
-fn bar() -> usz {
+fn bar() -> uisz {
   return 420;
 }
 
