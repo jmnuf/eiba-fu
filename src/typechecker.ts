@@ -1,6 +1,6 @@
 import type { Prettify, SourcePosition } from './utils';
 import { $todo, Result, get_current_line, pipe, unreachable } from './utils';
-import type { AstNode, EoFNode, FnDeclNode, SimpNode, VarDeclNode } from './parser';
+import type { AstNode, EoFNode, FnDeclNode, KeywordNode, SimpNode, VarDeclNode } from './parser';
 import { Lex, TokenKind } from './lexer';
 import { AstNodeKind, is_cmp_operator, is_logic_operator, is_math_operator, node_debug_fmt } from './parser';
 
@@ -435,6 +435,34 @@ export function get_type_name(t: LangType): string {
 }
 
 
+function get_function_returns(ctx: TypesContext, body: Array<Exclude<AstNode, EoFNode>>): Result<LangType[], string> {
+  const returns: LangType[] = [];
+  for (const n of body) {
+    if (n.kind == 'iffi') {
+      const result = get_function_returns(ctx, n.body);
+      if (!result.ok) return result;
+      returns.push(...result.value);
+      if (n.else) {
+        const result = get_function_returns(ctx, n.else);
+        if (!result.ok) return result;
+        returns.push(...result.value);
+      }
+      continue;
+    }
+    if (n.kind == 'kword' && n.word == 'return') {
+      if (!n.expr) {
+        returns.push(T.void);
+        continue;
+      }
+      const result = get_type(ctx, n.expr);
+      if (!result.ok) return Result.Err(result.error ?? 'Failed to assume type for ' + node_debug_fmt(n));
+      returns.push(result.value);
+    }
+  }
+  return Result.Ok(returns);
+}
+
+
 function ensure_return_type(ctx: TypesContext, t: LangType, body: Array<Exclude<AstNode, EoFNode>>, fn_body: boolean = false): string[] {
   const errors: string[] = [];
 
@@ -483,8 +511,6 @@ function get_func_body_and_args_types(
   const args: { name: string; type: LangType }[] = [];
   for (const n of parsed_node.args) {
     if (n.type == '()') {
-      // TODO: Not really sure but maybe implement inferring the function arguments types?
-      // throw new Error('TODO: Maybe implement inferring the function arguments types?');
       return Result.Err(`${ctx.input_path}:${n.pos.line}:${n.pos.column}: No types provided for function argument ${n.name}`);
     }
     const type_result = parse_type_from_str(fn_ctx, n.type);
@@ -502,17 +528,18 @@ function get_func_body_and_args_types(
   }
 
   let returns: FuncType['returns'] | null = null;
+  // console.log('user defined return type as', parsed_node.returns);
   if (parsed_node.returns != '()') {
     const parse_returns_result = parse_type_from_str(ctx, parsed_node.returns);
     if (!parse_returns_result.ok) return parse_returns_result;
     returns = parse_returns_result.value;
-
     const errors = ensure_return_type(fn_ctx, returns, parsed_node.body);
     if (errors.length > 0) {
-      return Result.Err('Return type mismatches:\n  ' + errors.join('\n '));
+      return Result.Err('Return type mismatches:\n  ' + errors.join('\n  '));
     }
   } else {
     // TODO: Implement reading body properly for inferring the return type
+    // TODO: IDK how we end this section without properly reading the entire function 
 
     let returned: LangType[] = [];
     for (const n of parsed_node.body) {
@@ -529,17 +556,39 @@ function get_func_body_and_args_types(
           type: type_result.value,
           decl: n,
         });
+        continue;
       }
-      if (n.kind != 'kword' || n.word == 'return') continue;
+
+      if (n.kind == AstNodeKind.IfElse) {
+        const if_result = get_function_returns(fn_ctx, n.body);
+        if (!if_result.ok) {
+          return Result.Err(if_result.error);
+        }
+        returned.push(...if_result.value);
+
+        if (n.else) {
+          const else_result = get_function_returns(fn_ctx, n.else);
+          if (!else_result.ok) {
+            return Result.Err(else_result.error);
+          }
+          returned.push(...else_result.value);
+        }
+
+        continue;
+      }
+      if (n.kind != 'kword') continue;
+      if (n.word != 'return') continue;
       if (!n.expr) {
         returned.push(T.void);
         continue;
       }
       const r = get_type(fn_ctx, n.expr);
-      if (r.ok && r.value) returned.push(r.value);
-      else if (!r.ok && r.error) console.log('[DEBUG] Failed to naively guess the type', r.error);
+      if (!r.ok) return Result.Err(r.error ?? 'Failed to naively guess the type');
+      returned.push(r.value);
     }
-    if (returned.length === 1) {
+    if (returned.length === 0) {
+      returns = T.void;
+    } else if (returned.length === 1) {
       returns = returned[0]!;
     } else if (returned.length > 0) {
       const a = returned[0]!;
@@ -547,18 +596,19 @@ function get_func_body_and_args_types(
         if (!types_are_equivalent(a, b)) {
           const a_name = get_type_name(a);
           const b_name = get_type_name(b);
-          return Result.Err(`Type mismatch in return statement: Assumed \`${a_name}\` but found \`${b_name}\``);
+          return Result.Err(`Type mismatch in return statement: Assumed \`${a_name}\` from first return but found \`${b_name}\``);
         }
       }
       returns = a;
     } else {
       returns = T.void;
     }
+    // console.log('[DEBUG] In inference found', returned.length, 'return statements');
   }
+  // console.log('[DEBUG] Inferred return of', get_type_name(returns), 'from the user', parsed_node.returns);
 
   if (returns == null) return Result.Err(`The return value is unabled to be inferred`);
 
-  // throw new Error('TODO: Implement get_func_body_and_args_types');
   return Result.Ok({ fn_ctx, args, returns });
 }
 
@@ -595,6 +645,7 @@ function parse_type_from_str(ctx: TypesContext, str: string): Result<LangType, s
   return Result.Ok(array_t);
 }
 
+// TODO: Write a test to cover all cases of this function
 function types_are_equivalent(a: LangType, b: LangType): boolean {
   if (a === b) return true;
   // If one of the two are 'any' then just call it equal as 'any' is equivalent to everything
@@ -609,6 +660,17 @@ function types_are_equivalent(a: LangType, b: LangType): boolean {
       if (a_base == 'string' || a_base == 'bool' || a_base == 'null' || a_base == 'ptr') {
         return a_base == b_base;
       }
+      if (b_base == 'string' || b_base == 'bool' || b_base == 'null' || b_base == 'ptr') {
+        return false;
+      }
+
+      if (a_base == 'flt32' || a_base == 'flt64') {
+        return b_base == 'flt32' || b_base == 'flt64';
+      }
+      if (b_base == 'flt32' || b_base == 'flt64') {
+        return false;
+      }
+
       // All numbers are castable to one another
       return true;
     };

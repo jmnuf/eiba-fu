@@ -1,0 +1,6 @@
+:i exit_code 1
+:b stdout 0
+
+:b stderr 87
+Type mismatch in return statement: Assumed `sisz` from first return but found `string`
+
