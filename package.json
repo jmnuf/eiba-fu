@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "bun build --compile --outfile=build/eibafuc src/index.ts"
+    "build": "bun build --compile --outfile=build/eibafuc src/index.ts",
+    "check": "bun run ./ir-tests.ts && bun run ./examples.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
