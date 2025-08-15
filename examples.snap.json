@@ -1,22 +1,22 @@
 {
   "hello_world": {
-    "go": "ok",
-    "js": "ok"
+    "GoLang": "ok",
+    "JavaScript": "ok"
   },
   "math_ops": {
-    "go": "ok",
-    "js": "ok"
+    "GoLang": "ok",
+    "JavaScript": "ok"
   },
   "pipe_op": {
-    "go": "ok",
-    "js": "ok"
+    "GoLang": "ok",
+    "JavaScript": "ok"
   },
   "fizzbuzz": {
-    "go": "ok",
-    "js": "ok"
+    "GoLang": "ok",
+    "JavaScript": "ok"
   },
   "fib": {
-    "go": "ok",
-    "js": "ok"
+    "GoLang": "ok",
+    "JavaScript": "ok"
   }
 }

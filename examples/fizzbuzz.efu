@@ -1,7 +1,7 @@
 
 let target := 15;
 
-fn fizzbuz(n) -> isz {
+fn fizzbuz(n: sisz) -> sisz {
   if (n > target) return n;
 
   let rem3 := n % 3;
