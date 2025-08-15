@@ -1,6 +1,6 @@
 import type { Prettify, SourcePosition } from './utils';
-import { $todo, Result, pipe, unreachable } from './utils';
-import type { AstNode, EoFNode, FnDeclNode, SimpNode } from './parser';
+import { $todo, Result, get_current_line, pipe, unreachable } from './utils';
+import type { AstNode, EoFNode, FnDeclNode, SimpNode, VarDeclNode } from './parser';
 import { Lex, TokenKind } from './lexer';
 import { AstNodeKind, is_cmp_operator, is_logic_operator, is_math_operator, node_debug_fmt } from './parser';
 
@@ -124,6 +124,7 @@ type TypeBuilder<Kind extends LangType['kind'], Buildable extends boolean = fals
 type TypesContextVar = {
   name: string;
   loc: SourcePosition | null;
+  decl: VarDeclNode | FnDeclNode | null;
   type: LangType;
 };
 class TypesContext {
@@ -496,6 +497,7 @@ function get_func_body_and_args_types(
       loc: null,
       name: n.name,
       type: type_result.value,
+      decl: parsed_node,
     });
   }
 
@@ -510,7 +512,7 @@ function get_func_body_and_args_types(
       return Result.Err('Return type mismatches:\n  ' + errors.join('\n '));
     }
   } else {
-    console.warn('[WARN] TODO: Implement reading body properly for inferring the return type');
+    // TODO: Implement reading body properly for inferring the return type
 
     let returned: LangType[] = [];
     for (const n of parsed_node.body) {
@@ -525,6 +527,7 @@ function get_func_body_and_args_types(
           loc: null,
           name: n.name,
           type: type_result.value,
+          decl: n,
         });
       }
       if (n.kind != 'kword' || n.word == 'return') continue;
@@ -771,9 +774,9 @@ export function create_global_context(input_path: string): TypesContext {
     .set_return(T.string)
     .build();
 
-  ctx.add_var({ name: printf_t.name, loc: null, type: printf_t });
-  ctx.add_var({ name: printnf_t.name, loc: null, type: printnf_t });
-  ctx.add_var({ name: fmt_t.name, loc: null, type: fmt_t });
+  ctx.add_var({ name: printf_t.name, loc: null, type: printf_t, decl: null });
+  ctx.add_var({ name: printnf_t.name, loc: null, type: printnf_t, decl: null });
+  ctx.add_var({ name: fmt_t.name, loc: null, type: fmt_t, decl: null });
 
   return ctx;
 }
@@ -826,6 +829,7 @@ export function get_type(
         },
         name: typed_node.name,
         type: typed_node,
+        decl: parsed_node,
       });
     } break;
 
@@ -866,7 +870,7 @@ export function get_type(
             return Result.Err(`Could not read the type of the variable initialization and errored with null`);
           }
           const init_type = init_type_result.value;
-          if (parsed_node.init.kind == 'pop') console.log(init_type, parsed_node);
+          // if (parsed_node.init.kind == 'pop') console.log(init_type, parsed_node);
 
           if (!types_are_equivalent(init_type, var_usr_decl_type)) return Result.Err(`Incompatible type at variable initialization`);
 
@@ -878,6 +882,7 @@ export function get_type(
             },
             name: parsed_node.name,
             type: var_usr_decl_type,
+            decl: parsed_node,
           });
           return Result.Ok(var_usr_decl_type);
         } else {
@@ -896,7 +901,13 @@ export function get_type(
             },
             name: parsed_node.name,
             type: init_type,
+            decl: parsed_node,
           });
+          if (parsed_node.type.general == 'number') {
+            if (!is_number(init_type)) {
+              return Result.Err('Inialization should be a number');
+            }
+          }
           parsed_node.type.name = get_type_name(init_type);
           parsed_node.type.infer_pos = {
             file: parsed_node.type.infer_pos?.file ?? ctx.input_path,
@@ -923,6 +934,7 @@ export function get_type(
           },
           name: parsed_node.name,
           type: result.value,
+          decl: parsed_node,
         });
         typed_node = result.value;
       }
@@ -935,12 +947,18 @@ export function get_type(
         pipe = pipe.next;
       }
       switch (pipe.val.kind) {
+        case AstNodeKind.FuncCall: {
+          const t_result = get_type(ctx, pipe.val);
+          if (!t_result.ok) return Result.Err(`Failed to read type\n${t_result.error}`);
+          const t = t_result.value as FuncType;
+          typed_node = t.returns;
+          break;
+        }
         case AstNodeKind.Ident:
         case AstNodeKind.Expr:
         case AstNodeKind.Literal: {
-          const pos = parsed_node.pos;
           const t_result = get_type(ctx, pipe.val);
-          if (!t_result.ok) return Result.Err(`${ctx.input_path}:${pos.line}:${pos.column}: Failed to read type\n${t_result.error}`);
+          if (!t_result.ok) return Result.Err(`Failed to read type: ${t_result.error}`);
           const t = t_result.value;
 
           if (t.kind == 'func') return Result.Ok(t.returns);
@@ -977,6 +995,25 @@ export function get_type(
         if (!is_number(rhs_t)) {
           return Result.Err('Right side of math operation is not a number but has type `' + get_type_name(rhs_t) + '`');
         }
+        if (rhs_t.kind != 'enum' && lhs_node.kind == 'idnt') {
+          const lhs_v = ctx.get_var(lhs_node.ident);
+          if (lhs_v && lhs_v.decl && lhs_v.decl.kind == 'vardcl') {
+            if (lhs_v.decl.type.general == 'number') {
+              lhs_v.decl.type.name = get_type_name(rhs_t);
+              lhs_v.decl.type.general = null;
+            }
+          }
+        }
+        if (lhs_t.kind != 'enum' && rhs_node.kind == 'idnt') {
+          const rhs_v = ctx.get_var(rhs_node.ident);
+          if (rhs_v && rhs_v.decl && rhs_v.decl.kind == 'vardcl') {
+            if (rhs_v.decl.type.general == 'number') {
+              rhs_v.decl.type.name = get_type_name(lhs_t);
+              rhs_v.decl.type.general = null;
+            }
+          }
+        }
+
         typed_node = rhs_t.kind === 'primitive' ? ctx.get_type(rhs_t.base)! : Ints.uisz;
         return Result.Ok(typed_node);
       }
@@ -992,13 +1029,39 @@ export function get_type(
       }
 
       if (is_cmp_operator(op)) {
-        if (!is_number(lhs_t)) return Result.Err('Left side of comparison operator is not of any number type');
-        if (is_any_integer(lhs_t)) {
-          if (is_any_integer(rhs_t)) return Result.Ok(T.bool);
-          return Result.Err('Right side of integer comparison is not an integer, it has a type of `' + get_type_name(rhs_t) + '`');
+        if (!is_number(lhs_t)) {
+          const rhs_name = get_type_name(rhs_t);
+          return Result.Err('Left side of comparison operator is not of a valid number type, it has type of `' + rhs_name + '`');
         }
-        if (is_number(rhs_t)) return Result.Ok(T.bool);
-        return Result.Err('Right side of float comparison operator is not have type of `bool` but has type `' + get_type_name(rhs_t) + '`');
+        if (is_any_integer(lhs_t) && !is_any_integer(rhs_t)) {
+          const rhs_name = get_type_name(rhs_t);
+          return Result.Err('Right side of integer comparison is not an integer, it has a type of `' + rhs_name + '`');
+        }
+        if (!is_number(rhs_t)) {
+          const rhs_name = get_type_name(rhs_t);
+          return Result.Err('Right side of float comparison operator is not have type of `bool` but has type `' + rhs_name + '`');
+        }
+
+        if (rhs_t.kind != 'enum' && lhs_node.kind == 'idnt') {
+          const lhs_v = ctx.get_var(lhs_node.ident);
+          if (lhs_v && lhs_v.decl && lhs_v.decl.kind == 'vardcl') {
+            if (lhs_v.decl.type.general == 'number') {
+              lhs_v.decl.type.name = get_type_name(rhs_t);
+              lhs_v.decl.type.general = null;
+            }
+          }
+        }
+        if (lhs_t.kind != 'enum' && rhs_node.kind == 'idnt') {
+          const rhs_v = ctx.get_var(rhs_node.ident);
+          if (rhs_v && rhs_v.decl && rhs_v.decl.kind == 'vardcl') {
+            if (rhs_v.decl.type.general == 'number') {
+              rhs_v.decl.type.name = get_type_name(lhs_t);
+              rhs_v.decl.type.general = null;
+            }
+          }
+        }
+
+        return Result.Ok(T.bool);
       }
     } break;
 
@@ -1023,6 +1086,13 @@ export function get_type(
       typed_node = usr_var.type;
     } break;
 
+    case AstNodeKind.Expr: {
+      if (!parsed_node.item) return Result.Ok(T.void);
+      const result = get_type(ctx, parsed_node.item);
+      if (!result.ok) return Result.Err(result.error ?? 'Could not read type of enclosed expression');
+      typed_node = result.value;
+    } break;
+
     default: {
       throw new Error(`Unhandled parse node kind attempting to get type: ${parsed_node.kind}`);
     };
@@ -1033,6 +1103,18 @@ export function get_type(
   return Result.Ok(typed_node);
 }
 
+
+
+
+const eprintln = (file_path: string, pos: { line: number; column: number; }, ...data: [any, ...any[]]) =>
+  console.error(`${file_path}:${pos.line}:${pos.column}: [ERROR]`, ...data);
+const println = (file_path: string, pos: { line: number; column: number; }, ...data: [any, ...any[]]) =>
+  console.log(`${file_path}:${pos.line}:${pos.column}: [INFO]`, ...data);
+
+
+
+
+
 // Return whether the types are ok and print type errors if any
 export function check_types(
   ctx: TypesContext,
@@ -1040,11 +1122,114 @@ export function check_types(
   parent: SimpNode | null = null,
 ): boolean {
   if (!node) return true;
-  console.log('[DEBUG] Type checking node', node.kind);
+  // console.log('[DEBUG] Type checking node', node.kind);
 
   switch (node.kind) {
     case AstNodeKind.Literal:
       return true;
+
+    case AstNodeKind.VarDecl: {
+      if (ctx.has_var(node.name)) {
+        const v = ctx.get_var(node.name)!;
+        if (v.loc?.line !== node.pos.line || v.loc?.column !== node.pos.column) {
+          eprintln(ctx.input_path, node.pos, `Re-declaring variable ${node.name}`);
+          if (v.loc) println(ctx.input_path, v.loc, 'Originally declared here');
+          else console.log('[INFO] Original declaration was not preserved');
+          return false;
+        }
+        const cur_pos = get_current_line();
+        println(__filename, { line: cur_pos.line, column: cur_pos.char }, 'We have hit the same variable declaration twice');
+        return true;
+      }
+
+      const usr_type_name = node.type.name;
+      if (!node.init) {
+        const type_result = parse_type_from_str(ctx, usr_type_name);
+        if (!type_result.ok) {
+          const error = type_result.error;
+          eprintln(__filename, node.pos, error);
+          return false;
+        }
+
+        ctx.add_var({
+          name: node.name,
+          type: type_result.value,
+          decl: node,
+          loc: {
+            file: ctx.input_path,
+            line: node.pos.line,
+            column: node.pos.column,
+          },
+        });
+        return true;
+      } else {
+        const init_t_result = get_type(ctx, node.init);
+        if (!init_t_result.ok) {
+          const error = init_t_result.error ?? 'Unknown error when type checking variable initialization';
+          eprintln(ctx.input_path, node.pos, error);
+          return false;
+        }
+        if (usr_type_name == '()') {
+          ctx.add_var({
+            name: node.name,
+            type: init_t_result.value,
+            decl: node,
+            loc: {
+              file: ctx.input_path,
+              line: node.pos.line,
+              column: node.pos.column,
+            },
+          });
+          return true;
+        }
+        const init_t = init_t_result.value;
+        if (usr_type_name == 'number') {
+          if (!is_number(init_t)) {
+            eprintln(ctx.input_path, node.pos, 'Expected initialization value to be a valid number');
+            return false;
+          }
+
+          ctx.add_var({
+            name: node.name,
+            type: init_t,
+            decl: node,
+            loc: {
+              file: ctx.input_path,
+              line: node.pos.line,
+              column: node.pos.column,
+            },
+          });
+          return true;
+        }
+
+        const type_result = parse_type_from_str(ctx, usr_type_name);
+        if (!type_result.ok) {
+          const error = type_result.error;
+          eprintln(ctx.input_path, node.pos, 'UnknownType: ' + error);
+          return false;
+        }
+
+        const var_t = type_result.value;
+        if (!types_are_equivalent(var_t, init_t)) {
+          const init_t_name = get_type_name(init_t);
+          const var_t_name = get_type_name(var_t);
+          eprintln(ctx.input_path, node.pos, `Initialization value \`${init_t_name}\` does not match provided type \`${var_t_name}\``);
+          return false;
+        }
+
+        ctx.add_var({
+          name: node.name,
+          type: var_t,
+          decl: node,
+          loc: {
+            file: ctx.input_path,
+            line: node.pos.line,
+            column: node.pos.column,
+          },
+        });
+        return true;
+      }
+    };
 
     case AstNodeKind.Keyword: {
       const fn = (parent as FnDeclNode);
@@ -1053,24 +1238,23 @@ export function check_types(
       const returns = returns_result.value;
       if (node.expr == null && returns.kind == 'void') return true;
       if (!node.expr) {
-        const { line, column } = node.pos;
         const returns_name = get_type_name(returns);
-        console.error(`${ctx.input_path}:${line}:${column}: Expected return of '${returns_name}' but are returning 'void'`);
+        eprintln(ctx.input_path, node.pos, `Expected return of '${returns_name}' but are returning 'void'`);
         return false;
       }
+
       const returning_result = get_type(ctx, node.expr);
       if (!returning_result.ok) {
         const error = returning_result.error;
-        const { line, column } = node.expr.pos;
-        console.error(`${ctx.input_path}:${line}:${column}: Type is unreadable by type checker\n${error}`);
+        eprintln(ctx.input_path, node.expr.pos, `Type is unreadable by type checker: ${error}`);
         return false;
       }
+
       const returning = returning_result.value;
       if (!types_are_equivalent(returning, returns)) {
-        const { line, column } = node.expr.pos;
         const returns_name = get_type_name(returns);
         const returning_name = get_type_name(returning);
-        console.error(`${ctx.input_path}:${line}:${column}: Expected return of '${returns_name}' but are returning '${returning_name}'`);
+        eprintln(ctx.input_path, node.expr.pos, `Expected return of '${returns_name}' but are returning '${returning_name}'`);
         return false;
       }
 
@@ -1078,12 +1262,159 @@ export function check_types(
     };
 
     case AstNodeKind.IfElse: {
+      const cond_t_result = get_type(ctx, node.cond);
+      if (!cond_t_result.ok) {
+        eprintln(ctx.input_path, node.cond.pos, cond_t_result.error ?? 'Failed to evaluate type of if condition');
+        return false;
+      }
+      const cond_t = cond_t_result.value;
+      if (!types_are_equivalent(cond_t, T.bool)) {
+        const cond_t_name = '`' + get_type_name(cond_t) + '`';
+        eprintln(ctx.input_path, node.cond.pos, 'If condition must evaluate to a `bool` type but it is currently of type', cond_t_name);
+        return false;
+      }
+
       for (const n of node.body) {
-        if (!check_types(ctx, n, parent)) return false;
+        if (!check_types(ctx.new_child_ctx(), n, parent)) return false;
       }
       for (const n of node.else ?? []) {
-        if (!check_types(ctx, n, parent)) return false;
+        if (!check_types(ctx.new_child_ctx(), n, parent)) return false;
       }
+      return true;
+    };
+
+    case AstNodeKind.PipeOp: {
+      let prv_result = get_type(ctx, node.val);
+      if (!prv_result.ok) {
+        eprintln(ctx.input_path, node.pos, prv_result.error ?? 'Failed to assume type of ' + node_debug_fmt(node.val));
+        return false;
+      }
+      let held = { T: prv_result.value, pos: node.val.pos };
+      let piper = node.next;
+      while (piper) {
+        const pipe = piper;
+        piper = piper.next;
+        const prv = held;
+
+        if (pipe.val.kind == 'fncal') {
+          const call_node = pipe.val;
+          const fn_var = ctx.get_var(pipe.val.name);
+          if (!fn_var) {
+            eprintln(ctx.input_path, call_node.pos, `Attempting to call non-existent function '${pipe.val.name}', did you spell it right?`);
+            return false;
+          }
+          const fn_t = fn_var.type;
+          if (fn_t.kind != 'func') {
+            const t_name = get_type_name(fn_var.type);
+            eprintln(ctx.input_path, call_node.pos, `Attempting to call '${t_name}' as a function '${pipe.val.name}', what are you scheming?`);
+            return false;
+          }
+
+          if (fn_t.args.length != call_node.args.length + 1) {
+            const t_name = get_type_name(fn_var.type);
+            if (fn_t.args.length < call_node.args.length + 1 && !fn_t.variadic) {
+              eprintln(ctx.input_path, call_node.pos, `Too many arguments passed to function ${call_node.name} of type \`${t_name}\``);
+              return false;
+            }
+            if (fn_t.args.length - (fn_t.variadic ? 1 : 0) > call_node.args.length + 1) {
+              eprintln(ctx.input_path, call_node.pos, `Insufficient arguments passed to function ${call_node.name} of type \`${t_name}\``);
+              return false;
+            }
+          }
+          if (fn_t.variadic) {
+            let failed = false;
+            for (let i = 0; i <= call_node.args.length; ++i) {
+              let carg_t: LangType;
+              let pos: { line: number; column: number };
+              if (i < call_node.args.length) {
+                const call_arg = call_node.args[i]!;
+                const carg_result = get_type(ctx, call_arg);
+                if (!carg_result.ok) {
+                  eprintln(ctx.input_path, call_arg.pos, carg_result.error ?? ('Failed to assume type of ' + node_debug_fmt(call_arg)));
+                  failed = true;
+                  continue;
+                }
+                carg_t = carg_result.value;
+                pos = call_arg.pos;
+              } else {
+                carg_t = prv.T;
+                pos = prv.pos;
+              }
+              const earg_t = i >= fn_t.args.length - 1 ? fn_t.variadic.type ?? T.any : fn_t.args[i]!.type;
+              if (!types_are_equivalent(earg_t, carg_t)) {
+                eprintln(ctx.input_path, pos, `Invalid type used in function call, expected type '${earg_t}' but got '${carg_t}'`);
+                failed = false;
+                continue;
+              }
+            }
+            if (failed) return false;
+            held = {
+              T: fn_t.returns,
+              pos: call_node.pos,
+            };
+            continue;
+          }
+
+          if (fn_t.args.length != call_node.args.length + 1) {
+            const line_pos = get_current_line();
+            eprintln(__filename, { line: line_pos.line, column: line_pos.char }, 'Should have failed early cause function arity differs');
+            return false;
+          }
+          let failed = false;
+          for (let i = 0; i < call_node.args.length; ++i) {
+            const call_arg = call_node.args[i]!;
+            const carg_result = get_type(ctx, call_arg);
+            if (!carg_result.ok) {
+              eprintln(ctx.input_path, call_arg.pos, carg_result.error ?? ('Failed to assume type of ' + node_debug_fmt(call_arg)));
+              failed = true;
+              continue;
+            }
+            const carg_t = carg_result.value;
+            const earg_t = fn_t.args[i]!.type;
+            if (!types_are_equivalent(earg_t, carg_t)) {
+              eprintln(ctx.input_path, call_arg.pos, `Invalid type used in function call, expected type '${earg_t}' but got '${carg_t}'`);
+              failed = false;
+              continue;
+            }
+          }
+          if (failed) return false;
+          held = {
+            T: fn_t.returns,
+            pos: call_node.pos,
+          };
+
+          continue;
+        }
+
+        const val_node = pipe.val;
+        const val_result = get_type(ctx, val_node);
+        if (!val_result.ok) {
+          eprintln(ctx.input_path, val_node.pos, val_result.error ?? 'Failed to assume type of ' + node_debug_fmt(val_node));
+          return false;
+        }
+        const val_t = val_result.value;
+        if (val_t.kind != 'func') {
+          // TODO: Proper error reporting that pipe operator can only be used with functions
+          eprintln(ctx.input_path, val_node.pos, 'not func');
+          return false;
+        }
+        if (val_t.args.length !== 1 && !(val_t.args.length == 2 && val_t.variadic)) {
+          // TODO: Better errror for incorrect function arity
+          eprintln(ctx.input_path, val_node.pos, `func arity Expected(${val_t.args}) != Received(1)`);
+          return false;
+        }
+        if (!types_are_equivalent(val_t.args[0]!.type, prv.T)) {
+          const earg_t = val_t.args[0]!.type;
+          const carg_t = prv.T;
+          eprintln(ctx.input_path, prv.pos, `Invalid type used in function call, expected type '${earg_t}' but got '${carg_t}'`);
+          return false;
+        }
+        held = {
+          T: val_t.returns,
+          pos: val_node.pos,
+        };
+      }
+
       return true;
     };
 
@@ -1156,6 +1487,7 @@ export function check_types(
         },
         name: node.name,
         type: fn_type,
+        decl: node,
       });
 
       if (node.returns == '()') node.returns = get_type_name(fn_type.returns);
@@ -1169,7 +1501,7 @@ export function check_types(
 
       for (const n of node.body) {
         if (n.kind == AstNodeKind.VarDecl) {
-          console.log('[DEBUG] Type checking node', node.kind);
+          // console.log('[DEBUG] Type checking node', node.kind);
           const tr = get_type(fn_ctx, n);
           if (!tr.ok) {
             console.error(tr.error ?? 'Failed to read of variable declaration and result has error set to null');
@@ -1186,7 +1518,7 @@ export function check_types(
     };
   }
 
-  console.error('Has no support for node ' + node.kind);
+  console.error('TypeChecker::check_types has no support for node ' + node_debug_fmt(node));
   return false;
 }
 
