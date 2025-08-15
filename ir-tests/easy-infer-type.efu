@@ -1,0 +1,6 @@
+
+fn main() {
+  let x :uisz = 34;
+  let y := 35;
+  return x + y;
+}
