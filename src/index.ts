@@ -168,47 +168,17 @@ while (node?.kind !== 'eof') {
 }
 
 if (errored) {
-  console.error('Parsing failed');
+  console.log('[INFO] Parsing failed');
   process.exit(1);
 }
 
-// const typed_program = [];
 
-{
-  const ctx = create_global_context(input_path);
-  for (const n of program) {
-    // console.log('[DEBUG] Type checking node', n.kind);
-    if (!check_types(ctx, n)) {
-      process.exit(1);
-    }
-    // const result = get_type(ctx, n);
-    // TODO: These error messages are terrible actually I think
-    // if (!result.ok) {
-    //   if (result.error) {
-    //     if (result.error === 'NULL') {
-    //       parser.logger.error(n.pos, 'Cannot type check cause something is missing');
-    //     } else {
-    //       compiler_logger.error(get_current_line(), result.error);
-    //       parser.logger.error(n.pos, 'Failed to read type of node ' + n.kind);
-    //     }
-    //   } else {
-    //     compiler_logger.error(get_current_line(), 'Reading node type failed with no message');
-    //     parser.logger.error(n.pos, 'Failed to read type of node ' + n.kind);
-    //   }
-    //   process.exit(1);
-    // }
-    // const t = result.value;
-    // if (n.kind == 'fndcl' && n.returns == '()') {
-    //   n.returns = get_type_name((t as FuncType).returns)
-    // }
-    // if (n.kind == 'vardcl' && n.type.name == '()') {
-    //   n.type.name = get_type_name(t);
-    // }
-    // console.log('[INFO] Node', n.kind, 'has type', '`' + get_type_name(result.value) + '`');
-    // typed_program.push(result.value);
+const program_ctx = create_global_context(input_path);
+for (const n of program) {
+  if (!check_types(program_ctx, n)) {
+    errored = true;
+    break;
   }
-
-  // console.log('[DEBUG] Generated typed program', typed_program);
 }
 
 if (opt.emit_ir) {
@@ -218,7 +188,12 @@ if (opt.emit_ir) {
     buf += str + '\n';
   }
   console.log(buf);
-  process.exit(0);
+  process.exit(errored ? 1 : 0);
+}
+
+if (errored) {
+  console.log('[INFO] Type checking failed');
+  process.exit(1);
 }
 
 const target_codegen = await (async (t: CliArgs['target']): Promise<TargetCodeGen | null> => {

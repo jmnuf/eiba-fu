@@ -172,6 +172,7 @@ async function main(argv: string[]): Promise<number> {
   let recording_is_ok = true;
 
   let output_buffer = '';
+  let exit_code = 0;
   for (const [test_name, file_path] of source_paths) {
     let output;
     if (quiet) {
@@ -204,7 +205,11 @@ async function main(argv: string[]): Promise<number> {
     if (!check_result.ok) {
       log.error(check_result.error.message);
       console.log(check_result.error);
+      exit_code = 1;
       continue;
+    }
+    if (check_result.value.t != 'ok' && check_result.value.t != 'untested') {
+      exit_code = 1;
     }
     if (output_buffer.length > 0) output_buffer += '\n- ';
     output_buffer += test_check_to_string(test_name, check_result.value);
@@ -222,7 +227,7 @@ async function main(argv: string[]): Promise<number> {
   log.info('Test Results:');
   console.log('- ' + output_buffer);
 
-  return 0;
+  return exit_code;
 }
 
 
