@@ -1140,16 +1140,16 @@ export function get_type(
 
       if (is_cmp_operator(op)) {
         if (!is_number(lhs_t)) {
-          const rhs_name = get_type_name(rhs_t);
-          return Result.Err('Left side of comparison operator is not of a valid number type, it has type of `' + rhs_name + '`');
+          const lhs_name = get_type_name(lhs_t);
+          return Result.Err('Left side of comparison operator must be a number, but it has type `' + lhs_name + '`');
         }
         if (is_any_integer(lhs_t) && !is_any_integer(rhs_t)) {
           const rhs_name = get_type_name(rhs_t);
-          return Result.Err('Right side of integer comparison is not an integer, it has a type of `' + rhs_name + '`');
+          return Result.Err('Right side of integer comparison is not an integer, but it has a type of `' + rhs_name + '`');
         }
         if (!is_number(rhs_t)) {
           const rhs_name = get_type_name(rhs_t);
-          return Result.Err('Right side of float comparison operator is not have type of `bool` but has type `' + rhs_name + '`');
+          return Result.Err('Right side of comparison operator must be a number, but it has type `' + rhs_name + '`');
         }
 
         if (rhs_t.kind != 'enum' && lhs_node.kind == 'idnt') {
