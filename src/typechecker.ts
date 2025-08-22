@@ -1721,11 +1721,22 @@ export function check_types(
         return false;
       }
       const fn_t = fn.type;
+      const fn_t = fn.type;
       if (node.args.length !== fn_t.args.length && fn_t.variadic == null) {
         const { line, column } = node.pos;
         const err = node.args.length < fn.type.args.length ? 'Insufficient arguments' : 'Too many arguments';
         console.error(`${ctx.input_path}:${line}:${column}: ${err} for calling function '${node.name}'`);
         return false;
+      }
+      if (fn_t.variadic) {
+        const minArgs = Math.max(0, fn_t.args.length - 1);
+        if (node.args.length < minArgs) {
+          const { line, column } = node.pos;
+          console.error(
+            `${ctx.input_path}:${line}:${column}: Insufficient arguments for variadic function '${node.name}' (expects at least ${minArgs})`
+          );
+          return false;
+        }
       }
       for (let i = 0; i < node.args.length; ++i) {
         const passed_node = node.args[i]!;
