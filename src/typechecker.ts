@@ -1643,7 +1643,9 @@ export function check_types(
             const carg_t = carg_result.value;
             const earg_t = fn_t.args[i]!.type;
             if (!types_are_equivalent(earg_t, carg_t)) {
-              eprintln(ctx.input_path, call_arg.pos, `Invalid type used in function call, expected type '${earg_t}' but got '${carg_t}'`);
+              const e_t = get_type_name(earg_t);
+              const c_t = get_type_name(carg_t);
+              eprintln(ctx.input_path, call_arg.pos, `Invalid type used in function call, expected type '${e_t}' but got '${c_t}'`);
               failed = false;
               continue;
             }
@@ -1663,23 +1665,40 @@ export function check_types(
           eprintln(ctx.input_path, val_node.pos, val_result.error ?? 'Failed to assume type of ' + node_debug_fmt(val_node));
           return false;
         }
+
         const val_t = val_result.value;
         if (val_t.kind != 'func') {
-          // TODO: Proper error reporting that pipe operator can only be used with functions
-          eprintln(ctx.input_path, val_node.pos, 'not func');
+          const v_t = get_type_name(val_t);
+          eprintln(ctx.input_path, val_node.pos, `Invalid pipe to: Attempting to pipe to non-function of type '${v_t}'`);
           return false;
         }
-        if (val_t.args.length !== 1 && !(val_t.args.length == 2 && val_t.variadic)) {
-          // TODO: Better errror for incorrect function arity
-          eprintln(ctx.input_path, val_node.pos, `func arity Expected(${val_t.args}) != Received(1)`);
+
+        if (val_t.args.length === 0) {
+          eprintln(ctx.input_path, val_node.pos, `Function arity mismatch: expected NO arguments but got 1`);
           return false;
         }
+
+        if (val_t.args.length !== 1) {
+          if (val_t.variadic) {
+            if (val_t.args.length > 2) {
+              const min_count = val_t.args.length - 1;
+              eprintln(ctx.input_path, val_node.pos, `Function arity mismatch: expected at least ${min_count} arguments but only got 1`);
+              return false;
+            }
+          } else {
+            const expected_count = val_t.args.length;
+            eprintln(ctx.input_path, val_node.pos, `Function arity mismatch: expected ${expected_count} arguments but got 1`);
+            return false;
+          }
+        }
+
         if (!types_are_equivalent(val_t.args[0]!.type, prv.T)) {
-          const earg_t = val_t.args[0]!.type;
-          const carg_t = prv.T;
+          const earg_t = get_type_name(val_t.args[0]!.type);
+          const carg_t = get_type_name(prv.T);
           eprintln(ctx.input_path, prv.pos, `Invalid type used in function call, expected type '${earg_t}' but got '${carg_t}'`);
           return false;
         }
+
         held = {
           T: val_t.returns,
           pos: val_node.pos,
