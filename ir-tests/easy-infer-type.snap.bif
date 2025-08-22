@@ -1,6 +1,6 @@
 :i exit_code 0
 :b stdout 165
-FnDecl{main, Return(sisz), Args{}, Body{VarDecl{x, Init(Literal{34, int})}, VarDecl{y, Init(Literal{35, int})}, Keyword{return, (BinOp{'+', Ident{x}, Ident{y}})}}}
+FnDecl{main, Return(uisz), Args{}, Body{VarDecl{x, Init(Literal{34, int})}, VarDecl{y, Init(Literal{35, int})}, Keyword{return, (BinOp{'+', Ident{x}, Ident{y}})}}}
 
 
 :b stderr 0

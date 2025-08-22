@@ -5,7 +5,9 @@
   "private": true,
   "scripts": {
     "build": "bun build --compile --outfile=build/eibafuc src/index.ts",
-    "check": "bun run ./ir-tests.ts && bun run ./examples.ts"
+    "check:ir": "bun run ./ir-tests.ts",
+    "check:examples": "bun run ./examples.ts",
+    "check": "bun run build && bun run check:ir && bun run check:examples && echo \"✅ All checks passed\""
   },
   "devDependencies": {
     "@types/bun": "latest"

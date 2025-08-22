@@ -29,7 +29,7 @@ export interface FnDeclNode {
   name: string;
   returns: string;
   args: FnDArgNode[];
-  body: Exclude<AstNode, EoFNode | FnDArgNode>[];
+  body: SimpNode[];
   pos: CursorPosition;
 }
 
@@ -44,7 +44,7 @@ export interface FnCallNode {
   kind: AstNodeKindsMap['FuncCall'];
   pos: CursorPosition;
   name: string;
-  args: Exclude<AstNode, EoFNode | FnDArgNode>[];
+  args: SimpNode[];
 }
 
 export interface BinopNode {
@@ -85,7 +85,7 @@ export interface KeywordNode {
   kind: AstNodeKindsMap['Keyword'];
   pos: CursorPosition;
   word: string;
-  expr: SimpNode | null;
+  expr: AstExprNode | null;
 }
 
 export interface VarDeclNode {
@@ -109,7 +109,7 @@ export interface IdentNode {
 export interface IfElseNode {
   kind: AstNodeKindsMap['IfElse'];
   pos: CursorPosition;
-  cond: Exclude<AstExprNode, FnDeclNode>;
+  cond: SimpNode;
   body: SimpNode[];
   else: null | SimpNode[];
 }

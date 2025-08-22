@@ -1,9 +1,9 @@
 import { readdir, mkdir } from 'node:fs/promises';
 
 import { Lex } from "./lexer";
-import { node_debug_fmt, Parse, type AstNode } from './parser';
+import { node_debug_fmt, Parse, type AstNode, type SimpNode } from './parser';
 import { compiler_logger, get_current_line, type TargetCodeGen } from "./utils";
-import { check_types, create_global_context, get_type, get_type_name, type FuncType } from './typechecker';
+import { check_types, create_global_context, get_type_name, register_global } from './typechecker';
 
 async function dir_exists(path: string) {
   try {
@@ -151,7 +151,7 @@ const lexer = Lex(content);
 const parser = Parse(input_path, lexer);
 
 let node: AstNode | null = null;
-const program = [] as Exclude<AstNode, { kind: 'eof' }>[];
+const program = [] as SimpNode[];
 let errored = false;
 while (node?.kind !== 'eof') {
   node = parser.parse_statement();
@@ -174,6 +174,28 @@ if (errored) {
 
 
 const program_ctx = create_global_context(input_path);
+for (const n of program) {
+  if (n.kind != 'fndcl' && n.kind != 'vardcl') continue;
+  const result = register_global(program_ctx, n);
+  if (!result.ok) {
+    if (n.kind == 'fndcl') console.error('[DEBUG] Failed to pregistered function', n.name + '(..)');
+    if (n.kind == 'vardcl') console.error('[DEBUG] Failed to pregistered variable', n.name);
+    for (const e of result.error) console.error(e);
+    process.exit(1);
+  }
+  if (!result.value) {
+    if (n.kind == 'fndcl') console.log(`[DEBUG] Did not pre-register \`function ${n.name}(..) -> unknown\` as it is unsupported`);
+    if (n.kind == 'vardcl') console.log(`[DEBUG] Did not pre-register variable ${n.name}: unknown`);
+    continue;
+  }
+}
+
+// let variables = 'Pre-registered variables are:';
+// for (const [var_name, var_node] of program_ctx.vars_list()) {
+//   variables += `\n    ${var_name}: ${get_type_name(var_node.type)}`;
+// }
+// console.log('[DEBUG]', variables);
+
 for (const n of program) {
   if (!check_types(program_ctx, n)) {
     errored = true;

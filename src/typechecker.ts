@@ -1,6 +1,6 @@
 import type { Prettify, SourcePosition } from './utils';
 import { $todo, Result, get_current_line, pipe, unreachable } from './utils';
-import type { AstNode, EoFNode, FnDeclNode, KeywordNode, SimpNode, VarDeclNode } from './parser';
+import type { AstNode, EoFNode, FnDArgNode, FnDeclNode, KeywordNode, SimpNode, VarDeclNode } from './parser';
 import { Lex, TokenKind } from './lexer';
 import { AstNodeKind, is_cmp_operator, is_logic_operator, is_math_operator, node_debug_fmt } from './parser';
 
@@ -124,7 +124,7 @@ type TypeBuilder<Kind extends LangType['kind'], Buildable extends boolean = fals
 type TypesContextVar = {
   name: string;
   loc: SourcePosition | null;
-  decl: VarDeclNode | FnDeclNode | null;
+  decl: VarDeclNode | FnDeclNode | FnDArgNode | null;
   type: LangType;
 };
 class TypesContext {
@@ -132,6 +132,8 @@ class TypesContext {
   private types: Map<string, LangType>;
   private vars: Map<string, TypesContextVar>;
   readonly input_path: string;
+  private static global_types: Map<string, LangType> = new Map();
+  private static global_vars: Map<string, TypesContextVar> = new Map();
 
   constructor(input_path: string, parent: TypesContext | null = null) {
     this.input_path = input_path;
@@ -140,17 +142,29 @@ class TypesContext {
     this.vars = new Map();
   }
 
+  vars_list = (): [string, TypesContextVar][] => {
+    const held = this.vars.entries().toArray();
+    const parent = this.parent ? this.parent.vars_list() : TypesContext.global_vars.entries().toArray();
+    return held.concat(parent);
+  }
+
   new_child_ctx = (input: string = this.input_path) => new TypesContext(input, this);
 
   get_type = (name: string): LangType | undefined => {
     let t = this.types.get(name);
-    if (t == undefined && this.parent) return this.parent.get_type(name);
+    if (t == undefined) {
+      if (this.parent) t = this.parent.get_type(name);
+      if (!t) return TypesContext.global_types.get(name);
+    }
     return t;
   };
 
   get_var = (name: string): TypesContextVar | undefined => {
     let t = this.vars.get(name);
-    if (t == undefined && this.parent) return this.parent.get_var(name);
+    if (t == undefined) {
+      if (this.parent) return this.parent.get_var(name);
+      else return TypesContext.global_vars.get(name);
+    }
     return t;
   };
 
@@ -164,7 +178,7 @@ class TypesContext {
   };
   type_exists = (name: string): boolean => {
     if (!this.parent) return this.types.has(name);
-    return this.types.has(name) || this.parent.type_exists(name);
+    return this.types.has(name) || this.parent.type_exists(name) || TypesContext.global_types.has(name);
   };
 
   add_var = (var_t: TypesContextVar): TypesContext => {
@@ -177,7 +191,18 @@ class TypesContext {
   };
   var_exists = (name: string): boolean => {
     if (!this.parent) return this.vars.has(name);
-    return this.vars.has(name) || this.parent.var_exists(name);
+    return this.vars.has(name) || this.parent.var_exists(name) || TypesContext.global_vars.has(name);
+  }
+  set_global_var = TypesContext.set_global_var.bind(TypesContext);
+  set_global_type = TypesContext.set_global_type.bind(TypesContext);
+
+  static set_global_var(var_t: TypesContextVar) {
+    TypesContext.global_vars.set(var_t.name, var_t);
+    return this;
+  }
+  static set_global_type(name: string, type: LangType) {
+    TypesContext.global_types.set(name, type);
+    return this;
   }
 }
 
@@ -619,7 +644,10 @@ function parse_type_from_str(ctx: TypesContext, str: string): Result<LangType, s
 
   const base_name = l.get_ident();
   const base_t = ctx.get_type(base_name);
-  if (!base_t) return Result.Err(`No type with name '${base_name}' was found. Did you spell it right?`);
+  if (!base_t) {
+    console.log('[DEBUG] Registered types:', ctx.vars_list());
+    return Result.Err(`No type with name '${base_name}' was found. Did you spell it right?`);
+  }
 
   let array_t: LangType = base_t;
   while (true) {
@@ -811,34 +839,37 @@ function is_number(t: LangType): t is IntType | FltType | EnumType {
 export function create_global_context(input_path: string): TypesContext {
   const ctx = new TypesContext(input_path);
 
-  for (const k of Object.keys(T) as Array<keyof typeof T>) {
-    const t = T[k];
-    ctx.add_type(k, t);
+  if (!ctx.type_exists('any')) {
+    for (const k of Object.keys(T) as Array<keyof typeof T>) {
+      const t = T[k];
+      ctx.set_global_type(k, t);
+    }
+
+    const printf_t = fn_type_builder()
+      .set_name('printf')
+      .add_arg('format_string', T.string)
+      .add_arg('rest', T.void)
+      .variadic({ name: 'rest', type: T.any })
+      .set_return(T.sisz)
+      .build();
+    const printnf_t: FuncType = {
+      ...printf_t,
+      name: 'printnf',
+    };
+
+    const fmt_t = fn_type_builder()
+      .set_name('fmt')
+      .add_arg('format_string', T.string)
+      .add_arg('rest', T.void)
+      .variadic({ name: 'rest', type: T.any })
+      .set_return(T.string)
+      .build();
+
+    ctx
+      .set_global_var({ name: printf_t.name, loc: null, type: printf_t, decl: null })
+      .set_global_var({ name: printnf_t.name, loc: null, type: printnf_t, decl: null })
+      .set_global_var({ name: fmt_t.name, loc: null, type: fmt_t, decl: null });
   }
-
-  const printf_t = fn_type_builder()
-    .set_name('printf')
-    .add_arg('format_string', T.string)
-    .add_arg('rest', T.void)
-    .variadic({ name: 'rest', type: T.any })
-    .set_return(T.sisz)
-    .build();
-  const printnf_t: FuncType = {
-    ...printf_t,
-    name: 'printnf',
-  };
-
-  const fmt_t = fn_type_builder()
-    .set_name('fmt')
-    .add_arg('format_string', T.string)
-    .add_arg('rest', T.void)
-    .variadic({ name: 'rest', type: T.any })
-    .set_return(T.string)
-    .build();
-
-  ctx.add_var({ name: printf_t.name, loc: null, type: printf_t, decl: null });
-  ctx.add_var({ name: printnf_t.name, loc: null, type: printnf_t, decl: null });
-  ctx.add_var({ name: fmt_t.name, loc: null, type: fmt_t, decl: null });
 
   return ctx;
 }
@@ -894,6 +925,25 @@ export function get_type(
         decl: parsed_node,
       });
     } break;
+
+    case AstNodeKind.FuncDclArg: {
+      if (parsed_node.type == '()') return Result.Err('No type was provided for argument ' + parsed_node.name);
+      const result = parse_type_from_str(ctx, parsed_node.type);
+      if (!result.ok) return result;
+
+      ctx.add_var({
+        name: parsed_node.name,
+        decl: parsed_node,
+        type: result.value,
+        loc: {
+          file: ctx.input_path,
+          line: parsed_node.pos.line,
+          column: parsed_node.pos.column,
+        },
+      });
+
+      return Result.Ok(result.value);
+    };
 
     case AstNodeKind.Literal: {
       if (parsed_node.type == 'str') {
@@ -1144,7 +1194,19 @@ export function get_type(
     case AstNodeKind.Ident: {
       const name = parsed_node.ident;
       const usr_var = ctx.get_var(name);
-      if (!usr_var) return Result.Err(`No variable or function found with name '${name}'`);
+      if (!usr_var) {
+        let error = `No variable or function found with name '${name}'`;
+        // const existing_vars = ctx.vars_list();
+        // if (existing_vars.length > 0) {
+        //   error += '\n  Existing variables are:';
+        //   for (const [var_name, var_node] of existing_vars) {
+        //     error += `\n    ${var_name}: ${get_type_name(var_node.type)}`;
+        //   }
+        // } else {
+        //   error += '\n  No variables exist in the current context';
+        // }
+        return Result.Err(error);
+      }
       typed_node = usr_var.type;
     } break;
 
@@ -1168,13 +1230,133 @@ export function get_type(
 
 
 
+const sprint = (file_path: string, pos: { line: number; column: number; }, ...data: [any, ...any[]]) =>
+  `${file_path}:${pos.line}:${pos.column}: ${data.join(' ')}`;
 const eprintln = (file_path: string, pos: { line: number; column: number; }, ...data: [any, ...any[]]) =>
   console.error(`${file_path}:${pos.line}:${pos.column}: [ERROR]`, ...data);
 const println = (file_path: string, pos: { line: number; column: number; }, ...data: [any, ...any[]]) =>
   console.log(`${file_path}:${pos.line}:${pos.column}: [INFO]`, ...data);
 
 
+function register_variable(ctx: TypesContext, parsed_node: VarDeclNode): Result<LangType, string> {
+  if (parsed_node.init) {
+    if (parsed_node.type.name != '()') {
+      const var_usr_decl_type_result = parse_type_from_str(ctx, parsed_node.type.name);
+      if (!var_usr_decl_type_result.ok) {
+        const error = var_usr_decl_type_result.error;
+        return Result.Err(`Failed to read user provided type \`${parsed_node.type.name}\`: ${error}`);
+      }
+      const var_usr_decl_type = var_usr_decl_type_result.value;
 
+      const init_type_result = get_type(ctx, parsed_node.init);
+      if (!init_type_result.ok) {
+        const error = init_type_result.error;
+        if (error) return Result.Err(`Could not read the type of the variable initialization: ${error}`);
+        return Result.Err(`Could not read the type of the variable initialization and errored with null`);
+      }
+      const init_type = init_type_result.value;
+      // if (parsed_node.init.kind == 'pop') console.log(init_type, parsed_node);
+
+      if (!types_are_equivalent(init_type, var_usr_decl_type)) return Result.Err(`Incompatible type at variable initialization`);
+
+      ctx.add_var({
+        loc: {
+          file: ctx.input_path,
+          line: parsed_node.pos.line,
+          column: parsed_node.pos.column,
+        },
+        name: parsed_node.name,
+        type: var_usr_decl_type,
+        decl: parsed_node,
+      });
+
+      return Result.Ok(var_usr_decl_type);
+    }
+
+    const init_type_result = get_type(ctx, parsed_node.init);
+    if (!init_type_result.ok) {
+      const error = init_type_result.error;
+      if (error) return Result.Err(`Could not read the type of the variable initialization: ${error}`);
+      return Result.Err(`Could not read the type of the variable initialization and errored with null`);
+    }
+
+    const init_type = init_type_result.value;
+    ctx.add_var({
+      loc: {
+        file: ctx.input_path,
+        line: parsed_node.pos.line,
+        column: parsed_node.pos.column,
+      },
+      name: parsed_node.name,
+      type: init_type,
+      decl: parsed_node,
+    });
+    if (parsed_node.type.general == 'number') {
+      if (!is_number(init_type)) {
+        return Result.Err('Inialization should be a number');
+      }
+    }
+
+    parsed_node.type.name = get_type_name(init_type);
+    parsed_node.type.infer_pos = {
+      file: parsed_node.type.infer_pos?.file ?? ctx.input_path,
+      line: parsed_node.type.infer_pos?.line ?? parsed_node.init.pos.line,
+      column: parsed_node.type.infer_pos?.column ?? parsed_node.init.pos.column,
+    };
+    return Result.Ok(init_type);
+
+  }
+
+  if (parsed_node.type.name === '()') {
+    return Result.Err(`Declared variable's type requires forward checking which is not implemented`);
+  }
+
+  const result = parse_type_from_str(ctx, parsed_node.type.name);
+  if (!result.ok) {
+    const error = result.error;
+    return Result.Err(`Failed to read user provided type \`${parsed_node.type.name}\`: ${error}`);
+  }
+  const parsed_type = result.value;
+
+  ctx.add_var({
+    loc: {
+      file: ctx.input_path,
+      line: parsed_node.pos.line,
+      column: parsed_node.pos.column,
+    },
+    name: parsed_node.name,
+    type: parsed_type,
+    decl: parsed_node,
+  });
+
+  return Result.Ok(parsed_type);
+}
+
+
+function find_returns(ctx: TypesContext, body: SimpNode[], found: Array<KeywordNode> = []): Result<typeof found, string> {
+  for (const n of body) {
+    if (n.kind == AstNodeKind.VarDecl) {
+      const result = register_variable(ctx, n);
+      if (!result.ok) return result;
+      continue;
+    }
+
+    if (n.kind == AstNodeKind.IfElse) {
+      const result = find_returns(ctx.new_child_ctx(), n.body, found);
+      if (!result.ok) return result;
+      if (n.else) {
+        const result = find_returns(ctx.new_child_ctx(), n.else, found);
+        if (!result.ok) return result;
+      }
+      continue;
+    }
+    if (n.kind == AstNodeKind.Keyword && n.word == 'return') {
+      found.push(n);
+      continue;
+    }
+  }
+  return Result.Ok(found);
+}
 
 
 // Return whether the types are ok and print type errors if any
@@ -1182,12 +1364,17 @@ export function check_types(
   ctx: TypesContext,
   node: Exclude<AstNode, EoFNode> | null | undefined,
   parent: SimpNode | null = null,
-): boolean {
+): node is (Exclude<AstNode, EoFNode> & { typing: LangType }) | null | undefined {
   if (!node) return true;
   // console.log('[DEBUG] Type checking node', node.kind);
+  const Ref: { value: LangType } = {} as any;
+  Object.defineProperty(Ref, 'value', {
+    set(v: LangType) { (node as any).typing = v; },
+  });
 
   switch (node.kind) {
     case AstNodeKind.Literal:
+      Ref.value = get_type(ctx, node).unwrap();
       return true;
 
     case AstNodeKind.VarDecl: {
@@ -1199,8 +1386,8 @@ export function check_types(
           else console.log('[INFO] Original declaration was not preserved');
           return false;
         }
-        const cur_pos = get_current_line();
-        println(__filename, { line: cur_pos.line, column: cur_pos.char }, 'We have hit the same variable declaration twice');
+        // const cur_pos = get_current_line();
+        // println(__filename, { line: cur_pos.line, column: cur_pos.char }, 'We have hit the same variable declaration twice');
         return true;
       }
 
@@ -1477,6 +1664,7 @@ export function check_types(
         };
       }
 
+      Ref.value = held.T;
       return true;
     };
 
@@ -1530,6 +1718,7 @@ export function check_types(
           }
         }
       }
+      Ref.value = fn_t.returns;
       return true;
     };
 
@@ -1554,7 +1743,7 @@ export function check_types(
 
       if (node.returns == '()') node.returns = get_type_name(fn_type.returns);
 
-      const decl_result = get_func_body_and_args_types(ctx, node);
+      const decl_result = get_func_body_and_args_types(ctx.new_child_ctx(), node);
       if (!decl_result.ok) {
         console.error(decl_result.error);
         return false;
@@ -1576,11 +1765,137 @@ export function check_types(
         if (!check_types(fn_ctx, n, node)) return false;
       }
 
+      Ref.value = fn_type;
       return true;
     };
   }
 
   console.error('TypeChecker::check_types has no support for node ' + node_debug_fmt(node));
   return false;
+}
+
+export function register_global(ctx: TypesContext, node: SimpNode): Result<boolean, [string, ...string[]]> {
+  switch (node.kind) {
+    case AstNodeKind.FuncDecl: {
+      const builder = fn_type_builder()
+        .set_name(node.name)
+        .originates({
+          file: ctx.input_path,
+          line: node.pos.line,
+          column: node.pos.column,
+        })
+        .set_return(T.void);
+      const errors = [] as unknown as [string, ...string[]];
+      const fn_ctx = ctx.new_child_ctx();
+      for (const arg_node of node.args) {
+        if (arg_node.type == '()') {
+          const { line, column } = arg_node.pos;
+          errors.push(`${ctx.input_path}:${line}:${column}: Argument ${arg_node.name} has no provided type`);
+          continue;
+        }
+        const type_parse_result = parse_type_from_str(ctx, arg_node.type);
+        if (!type_parse_result.ok) {
+          const { line, column } = arg_node.pos;
+          errors.push(`${ctx.input_path}:${line}:${column}: Failed to read type of argument ${arg_node.name}: ${type_parse_result.error}`);
+          continue;
+        }
+        if (errors.length > 0) continue;
+
+        const arg_t = type_parse_result.value;
+        builder.add_arg(arg_node.name, arg_t);
+
+        fn_ctx.add_var({
+          decl: arg_node,
+          name: arg_node.name,
+          type: arg_t,
+          loc: {
+            file: ctx.input_path,
+            line: arg_node.pos.line,
+            column: arg_node.pos.column,
+          },
+        });
+      }
+      if (errors.length > 0) {
+        return Result.Err(errors);
+      }
+
+      const returns_result = find_returns(fn_ctx, node.body);
+      if (!returns_result.ok) {
+        errors.push(returns_result.error);
+        return Result.Err(errors);
+      }
+      const returns = returns_result.value;
+
+      if (returns.length > 0 && returns.every(r => r.expr && r.expr.kind == 'fncal' && r.expr.name == node.name)) {
+        const { line, column } = node.pos;
+        return Result.Err([
+          `${ctx.input_path}:${line}:${column}: Cannot infer return type of an infinitely recursive function`
+        ]);
+      }
+
+      for (const ret_node of returns) {
+        if (!ret_node.expr) {
+          builder.set_return(T.void);
+          break;
+        }
+
+        const expr = ret_node.expr;
+
+        if (expr.kind == AstNodeKind.Literal) {
+          const t = get_type(fn_ctx, expr).unwrap();
+          builder.set_return(t);
+          break;
+        }
+
+        if (expr.kind == AstNodeKind.FuncCall) {
+          if (!fn_ctx.var_exists(expr.name)) {
+            if (expr.name === node.name) continue;
+            const { line, column } = expr.pos;
+            errors.push(`${ctx.input_path}:${line}:${column}: Attempting to call non-existent function ${expr.name}`);
+            continue;
+          }
+
+          const fn_var = fn_ctx.get_var(expr.name)!;
+          if (fn_var.type.kind != 'func') {
+            const { line, column } = expr.pos;
+            const tname = get_type_name(fn_var.type);
+            errors.push(`${ctx.input_path}:${line}:${column}: Attempting to call ${tname} as function ${expr.name}`);
+            continue;
+          }
+          builder.set_return(fn_var.type.returns);
+          break;
+        }
+
+        const t_result = get_type(fn_ctx, expr);
+        if (!t_result.ok) return Result.Err([sprint(ctx.input_path, expr.pos, t_result.error ?? 'Failed to assume type')]);
+        const t = t_result.value;
+        builder.set_return(t);
+        break;
+      }
+
+      if (errors.length > 0) {
+        return Result.Err(errors);
+      }
+
+      ctx.set_global_var({
+        decl: node,
+        name: node.name,
+        type: builder.build(),
+        loc: {
+          file: ctx.input_path,
+          line: node.pos.line,
+          column: node.pos.column,
+        },
+      });
+      return Result.Ok(true);
+    };
+
+    case AstNodeKind.VarDecl: {
+      const result = register_variable(ctx, node);
+      if (!result.ok) return Result.Err([result.error]);
+      return Result.Ok(true);
+    };
+  }
+  return Result.Ok(false);
 }
 

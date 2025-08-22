@@ -5,11 +5,11 @@ import type { AstNode, Parser, VarDeclNode, FnDeclNode } from './parser';
 
 export type Prettify<T> = { [K in keyof T]: T[K] } & unknown;
 
-export type Result<T, E> = { ok: true; value: T; } | { ok: false; error: E; };
+export type Result<T, E> = { ok: true; value: T; unwrap(): T; } | { ok: false; error: E; unwrap(): never; };
 
 export const Result = Object.freeze({
-  Ok: <T, E>(value: T): Result<T, E> => ({ ok: true, value }),
-  Err: <T, E>(error: E): Result<T, E> => ({ ok: false, error }),
+  Ok: <T, E>(value: T): Result<T, E> => ({ ok: true, value, unwrap() { return value; } }),
+  Err: <T, E>(error: E): Result<T, E> => ({ ok: false, error, unwrap() { throw new Error('Unwrapping Result:Error', { cause: error }); } }),
 });
 
 export type LogLevel = 'ERROR' | 'INFO' | 'WARN';
