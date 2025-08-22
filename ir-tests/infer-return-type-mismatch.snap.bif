@@ -1,0 +1,8 @@
+:i exit_code 1
+:b stdout 100
+FnDecl{main, Return(()), Args{}, Body{iffi{..}, Keyword{return, (Literal{"Hello, World!", str})}}}
+
+
+:b stderr 87
+Type mismatch in return statement: Assumed `sisz` from first return but found `string`
+

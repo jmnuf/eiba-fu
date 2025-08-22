@@ -91,6 +91,7 @@ const compiler_path = gen_path('build', 'eibafuc');
 async function main(argv: string[]): Promise<number> {
   let recording = false;
   let quiet = false;
+  let force_rebuild = false;
   const requested_tests: string[] = [];
   while (argv.length) {
     const arg = argv.shift()!;
@@ -102,6 +103,10 @@ async function main(argv: string[]): Promise<number> {
       quiet = true;
       continue;
     }
+    if (arg == '-rbc') {
+      force_rebuild = true;
+      continue;
+    }
     if (arg.startsWith('-')) {
       log.error('Unknown flag', arg, 'provided');
       return 1;
@@ -110,8 +115,13 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const compiler = Bun.file(compiler_path);
-  if (!await compiler.exists()) {
-    log.info('Compiler is missing. Compiling compiler...');
+  const compiler_missing = !await compiler.exists();
+  if (force_rebuild || compiler_missing) {
+    if (compiler_missing) {
+      log.info('Compiler is missing. Compiling compiler...');
+    } else {
+      log.info('Compiler exists, but force rebuild requested. Re-Compiling compiler...');
+    }
     const index_path = gen_path('src', 'index.ts');
     const result = await tryAsync<Bun.$.ShellOutput, Error>(async () => {
       const output = await log.cmd`bun build --compile --outfile=${compiler_path} ${index_path}`;
@@ -162,6 +172,7 @@ async function main(argv: string[]): Promise<number> {
   let recording_is_ok = true;
 
   let output_buffer = '';
+  let exit_code = 0;
   for (const [test_name, file_path] of source_paths) {
     let output;
     if (quiet) {
@@ -194,7 +205,11 @@ async function main(argv: string[]): Promise<number> {
     if (!check_result.ok) {
       log.error(check_result.error.message);
       console.log(check_result.error);
+      exit_code = 1;
       continue;
+    }
+    if (check_result.value.t != 'ok' && check_result.value.t != 'untested') {
+      exit_code = 1;
     }
     if (output_buffer.length > 0) output_buffer += '\n- ';
     output_buffer += test_check_to_string(test_name, check_result.value);
@@ -212,7 +227,7 @@ async function main(argv: string[]): Promise<number> {
   log.info('Test Results:');
   console.log('- ' + output_buffer);
 
-  return 0;
+  return exit_code;
 }
 
 

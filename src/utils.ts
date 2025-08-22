@@ -5,9 +5,17 @@ import type { AstNode, Parser, VarDeclNode, FnDeclNode } from './parser';
 
 export type Prettify<T> = { [K in keyof T]: T[K] } & unknown;
 
+export type Result<T, E> = { ok: true; value: T; unwrap(): T; } | { ok: false; error: E; unwrap(): never; };
+
+export const Result = Object.freeze({
+  Ok: <T, E>(value: T): Result<T, E> => ({ ok: true, value, unwrap() { return value; } }),
+  Err: <T, E>(error: E): Result<T, E> => ({ ok: false, error, unwrap() { throw new Error('Unwrapping Result:Error', { cause: error }); } }),
+});
+
 export type LogLevel = 'ERROR' | 'INFO' | 'WARN';
 
 export type CursorPosition = { line: number; column: number; };
+export type SourcePosition = { file: string; line: number; column: number; };
 
 export const create_parser_logger = (file_path: string) => ({
   info(pos: CursorPosition, ...stuff: any[]) {
@@ -97,3 +105,23 @@ export function ensure_valid_output_path_from_input_path(input_path: string, out
 
   return output_path;
 }
+
+class UnreachableError extends Error {
+  constructor(message: string) {
+    super('[UNREACHABLE] ' + message);
+  }
+}
+
+class TodoError extends Error {
+  constructor(message: string) {
+    super('[TODO] ' + message);
+  }
+}
+
+export function unreachable(...data: any[]): never {
+  throw new UnreachableError(data.join(' '));
+}
+export function $todo(...data: [any, ...any[]]): never {
+  throw new TodoError(data.join(' '));
+}
+

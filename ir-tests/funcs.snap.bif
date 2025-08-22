@@ -1,8 +1,8 @@
 :i exit_code 0
-:b stdout 285
-FnDecl{foo, Args{}, Body{Keyword{return, (Literal{69})}}}
-FnDecl{bar, Args{}, Body{Keyword{return, (Literal{420})}}}
-FnDecl{main, Args{}, Body{VarDecl{x, Init(FnCall{foo, ()})}, VarDecl{y, Init(FnCall{bar, ()})}, FnCall{printnf, (Literal{"foo = %v; bar = %v"}, Ident{x}, Ident{y})}}}
+:b stdout 359
+FnDecl{foo, Return(ui8), Args{}, Body{Keyword{return, (Literal{69, int})}}}
+FnDecl{bar, Return(uisz), Args{}, Body{Keyword{return, (Literal{420, int})}}}
+FnDecl{main, Return(void), Args{}, Body{VarDecl{x, Init(FnCall{'foo', Args()})}, VarDecl{y, Init(FnCall{'bar', Args()})}, FnCall{'printnf', Args(Literal{"foo = %v; bar = %v", str}, Ident{x}, Ident{y})}}}
 
 
 :b stderr 0

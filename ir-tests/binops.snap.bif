@@ -1,6 +1,6 @@
 :i exit_code 0
-:b stdout 104
-VarDecl{foo, Init(BinOp{'+', Literal{5}, BinOp{'-', BinOp{'*', Literal{3}, Literal{2}}, Literal{1}}})}
+:b stdout 124
+VarDecl{foo, Init(BinOp{'+', Literal{5, int}, BinOp{'-', BinOp{'*', Literal{3, int}, Literal{2, int}}, Literal{1, int}}})}
 
 
 :b stderr 0

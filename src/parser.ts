@@ -29,7 +29,7 @@ export interface FnDeclNode {
   name: string;
   returns: string;
   args: FnDArgNode[];
-  body: Exclude<AstNode, EoFNode | FnDArgNode>[];
+  body: SimpNode[];
   pos: CursorPosition;
 }
 
@@ -44,22 +44,22 @@ export interface FnCallNode {
   kind: AstNodeKindsMap['FuncCall'];
   pos: CursorPosition;
   name: string;
-  args: Exclude<AstNode, EoFNode | FnDArgNode>[];
+  args: SimpNode[];
 }
 
 export interface BinopNode {
   kind: AstNodeKindsMap['Binop'];
   pos: CursorPosition;
   op: BinopOperator;
-  lhs: AstNode;
-  rhs: AstNode;
+  lhs: SimpNode;
+  rhs: SimpNode;
 }
 
 // type PipeChainables = IdentNode | FnCallNode;
 export interface PipeOpNode {
   kind: AstNodeKindsMap['PipeOp'];
   pos: CursorPosition;
-  val: AstExprNode;
+  val: Exclude<AstExprNode, PipeOpNode>;
   next: PipeOpNode | null;
 }
 
@@ -85,7 +85,7 @@ export interface KeywordNode {
   kind: AstNodeKindsMap['Keyword'];
   pos: CursorPosition;
   word: string;
-  expr: AstNode | null;
+  expr: AstExprNode | null;
 }
 
 export interface VarDeclNode {
@@ -94,6 +94,7 @@ export interface VarDeclNode {
   name: string;
   type: {
     name: string;
+    general: 'number' | null;
     infer_pos: (CursorPosition & { file: string; }) | null;
   };
   init: AstExprNode | null;
@@ -108,9 +109,9 @@ export interface IdentNode {
 export interface IfElseNode {
   kind: AstNodeKindsMap['IfElse'];
   pos: CursorPosition;
-  cond: Exclude<AstExprNode, FnDeclNode>;
-  body: Exclude<AstNode, EoFNode>[];
-  else: null | Exclude<AstNode, EoFNode>[];
+  cond: SimpNode;
+  body: SimpNode[];
+  else: null | SimpNode[];
 }
 
 export type AstNode =
@@ -127,6 +128,8 @@ export type AstNode =
   | IdentNode
   | PipeOpNode
   ;
+
+export type SimpNode = Exclude<AstNode, EoFNode | FnDArgNode>;
 
 export type AstExprNode =
   | FnDeclNode
@@ -205,6 +208,7 @@ class SimpParser {
           let init: VarDeclNode['init'] = null;
           const type: VarDeclNode['type'] = {
             name: '()',
+            general: null,
             infer_pos: null,
           };
 
@@ -241,7 +245,7 @@ class SimpParser {
               if (expr.type == 'str') {
                 type.name = 'string';
               } else if (expr.type == 'int') {
-                type.name = 'isz';
+                type.general = 'number';
               }
             }
             if (type.infer_pos == null) {
@@ -678,7 +682,7 @@ class SimpParser {
     };
   }
 
-  parse_pipe_op = (start: AstExprNode): PipeOpNode | null => {
+  parse_pipe_op = (start: PipeOpNode['val']): PipeOpNode | null => {
     const {
       lexer, logger,
       parse_expr,
@@ -894,6 +898,11 @@ class SimpParser {
 
 }
 
+export const is_math_operator = (op: string): op is MathOperator => MATH_BINOPS.includes(op as any);
+export const is_logic_operator = (op: string): op is LogicalOperator => LOGIC_BINOPS.includes(op as any);
+export const is_cmp_operator = (op: string): op is ComparisonOperator => CMP_BINOPS.includes(op as any);
+
+
 export function pipe_node_to_list(head: PipeOpNode) {
   const list = [];
   let node: PipeOpNode | null = head;
@@ -974,11 +983,11 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
     case AstNodeKind.Literal: return pipe(
       node.value,
       JSON.stringify,
-      val => `Literal{${val}}`,
+      val => `Literal{${val}, ${node.type}}`,
     );
 
     case AstNodeKind.Keyword: return pipe(
-      [node.word, node.expr ? node_debug_fmt(node.expr) : '()'] as const,
+      [node.word, node.expr ? node_debug_fmt(node.expr) : 'void'] as const,
       ([kword, expr]) => `Keyword{${kword}, (${expr})}`,
     );
 
@@ -988,8 +997,8 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
     );
 
     case AstNodeKind.FuncDecl: return pipe(
-      [node.name, node.args.map(node_debug_fmt).join(', '), node.body.map(node_debug_fmt).join(', ')] as const,
-      ([name, args, body]) => `FnDecl{${name}, Args{${args}}, Body{${body}}}`,
+      [node.name, node.returns, node.args.map(node_debug_fmt).join(', '), node.body.map(node_debug_fmt).join(', ')] as const,
+      ([name, ret, args, body]) => `FnDecl{${name}, Return(${ret}), Args{${args}}, Body{${body}}}`,
     );
 
     case AstNodeKind.VarDecl: return pipe(
@@ -1000,7 +1009,7 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
 
     case AstNodeKind.FuncCall: return pipe(
       [node.name, node.args.map(node_debug_fmt).join(', ')] as const,
-      ([name, args]) => `FnCall{${name}, (${args})}`,
+      ([name, args]) => `FnCall{'${name}', Args(${args})}`,
     );
 
     case AstNodeKind.Binop: return pipe(
@@ -1020,6 +1029,7 @@ export function node_debug_fmt(node: AstNode | undefined | null): string {
       val => [val, node_debug_fmt(node.next)] as const,
       ([from, to]) => to == 'NULL' ? `${from}` : `Pipe{${from} |> ${to}}`,
     );
+
     default: return `${node.kind}{..}`;
   }
 }

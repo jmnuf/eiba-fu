@@ -1,17 +1,17 @@
 
-fn incr(x) -> isz {
+fn incr(x: sisz) -> sisz {
   return x + 1;
 }
 
-fn squared(x) -> isz {
+fn squared(x: sisz) -> sisz {
   return x * x;
 }
 
-fn cubed(x) -> isz {
+fn cubed(x: sisz) -> sisz {
   return x * x * x;
 }
 
-fn add(a, b) -> isz {
+fn add(a: sisz, b: sisz) -> sisz {
   return a + b;
 }
 

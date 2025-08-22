@@ -24,6 +24,38 @@ $Y.try = function*<T>(promise: Promise<T>): Generator<Promise<Result<T, unknown>
   );
 }
 
+const $ = Bun.$.cwd(__dirname).nothrow();
+
+function Cmd(strings: TemplateStringsArray, ...args: string[]) {
+  let usr_cmd = '';
+  for (let i = 0; i < strings.length; ++i) {
+    const str = strings[i];
+    usr_cmd += str;
+    if (i >= args.length) continue;
+    const arg = args[i]!;
+    usr_cmd += arg;
+  }
+  console.log('[CMD]', usr_cmd);
+  return $Y($(strings, ...args));
+}
+
+function CmdSilent(strings: TemplateStringsArray, ...args: string[]) {
+  let usr_cmd = '';
+  for (let i = 0; i < strings.length; ++i) {
+    const str = strings[i];
+    usr_cmd += str;
+    if (i >= args.length) continue;
+    const arg = args[i]!;
+    if (arg.length > __dirname.length && arg.startsWith(__dirname)) {
+      usr_cmd += '.' + arg.substring(__dirname.length);
+      continue;
+    }
+    usr_cmd += arg;
+  }
+  console.log('[CMD]', usr_cmd);
+  return $Y($(strings, ...args).quiet());
+}
+
 
 $$exec(function* main(args) {
   const opt = {
@@ -32,8 +64,9 @@ $$exec(function* main(args) {
     rebuild_compiler: false,
   };
 
+  const usr_requested_examples: string[] = [];
   while (args.length) {
-    const arg = args.shift();
+    const arg = args.shift()!;
     if (arg == '-rec') {
       opt.recording = true;
       continue;
@@ -46,10 +79,12 @@ $$exec(function* main(args) {
       opt.rebuild_compiler = true;
       continue;
     }
-    console.error(`Unknown cli argument passed: ${arg}`)
-    return 1;
+    if (arg[0] == '-') {
+      console.error(`Unknown cli argument passed: ${arg}`)
+      return 1;
+    }
+    usr_requested_examples.push(arg);
   }
-  const $ = Bun.$.cwd(__dirname).nothrow();
 
   const compiler_path = './build/eibafuc';
   const compiler = Bun.file(compiler_path);
@@ -57,11 +92,11 @@ $$exec(function* main(args) {
   if (!exists) {
     console.warn('Compiler has not been built');
     const index_path = './src/index.ts';
-    const result = yield* $Y($`bun build --compile --outfile=${compiler_path} ${index_path}`);
+    const result = yield* Cmd`bun build --compile --outfile=${compiler_path} ${index_path}`;
     if (result.exitCode != 0) return 1;
   } else if (opt.rebuild_compiler) {
     const index_path = './src/index.ts';
-    const result = yield* $Y($`bun build --compile --outfile=${compiler_path} ${index_path}`);
+    const result = yield* Cmd`bun build --compile --outfile=${compiler_path} ${index_path}`;
     if (result.exitCode != 0) return 1;
   }
   const examples_path = './examples';
@@ -74,21 +109,34 @@ $$exec(function* main(args) {
 
   const dir_entries = dir_res.value;
   const examples_paths: [string, string][] = [];
-  for (const entry of dir_entries) {
-    if (!entry.endsWith('.efu')) continue;
-    const entry_path = path.join('./examples', entry);
-    const name = entry.substring(0, entry.lastIndexOf('.'));
-    examples_paths.push([entry_path, name]);
+  if (usr_requested_examples.length > 0) {
+    for (const entry of dir_entries) {
+      if (!entry.endsWith('.efu')) continue;
+      const entry_path = path.join('./examples', entry);
+      const name = entry.substring(0, entry.lastIndexOf('.'));
+      if (!usr_requested_examples.includes(name) && !usr_requested_examples.includes(entry)) continue;
+      examples_paths.push([entry_path, name]);
+    }
+  } else {
+    for (const entry of dir_entries) {
+      if (!entry.endsWith('.efu')) continue;
+      const entry_path = path.join('./examples', entry);
+      const name = entry.substring(0, entry.lastIndexOf('.'));
+      examples_paths.push([entry_path, name]);
+    }
   }
 
-  const output_path = './efu/';
-  console.log(output_path);
+  const output_dir = path.join(__dirname, 'efu');
+  console.log(output_dir);
 
   const snap_path = path.join(__dirname, './examples.snap.json');
 
   type Status = 'untested' | 'build fail' | 'run fail' | 'ok';
-  const targets = ['js', 'go'] as const;
-  type TestsStatus = Record<string, { [K in typeof targets[number]]: Status; }>;
+  const targets = [
+    { ext: 'js', name: 'JavaScript' },
+    { ext: 'go', name: 'GoLang' },
+  ] as const satisfies Array<{ name: string; ext: string; }>;
+  type TestsStatus = Record<string, { [K in typeof targets[number]['name']]: Status; }>;
   const success: TestsStatus = yield* (function*() {
     if (opt.recording) return {};
     const exists = (yield* $Y(Bun.file(snap_path).exists()));
@@ -99,28 +147,36 @@ $$exec(function* main(args) {
   for (const [input_path, test_name] of examples_paths) {
     if (!(test_name in success)) {
       success[test_name] = {
-        go: 'untested',
-        js: 'untested',
+        GoLang: 'untested',
+        JavaScript: 'untested',
       };
     }
     executed[test_name] = {
-      go: 'untested',
-      js: 'untested',
+      GoLang: 'untested',
+      JavaScript: 'untested',
     };
-    for (const t of targets) {
-      console.log('[CMD]', `${compiler_path} -o ${output_path} -t ${t} -run ${input_path}`);
-      let output = yield* $Y($`${compiler_path} -o ${output_path} -t ${t} ${input_path}`.quiet());
+    for (const { ext, name } of targets) {
+      const output_path = path.join(output_dir, test_name + '.' + ext);
+      let output = yield* Cmd`${compiler_path} -o ${output_path} -t ${ext} ${input_path}`;
       if (output.exitCode != 0) {
-        executed[test_name][t] = 'build fail';
+        executed[test_name][name] = 'build fail';
         continue;
       }
-      if (opt.silent) {
-        output = yield* $Y($`${compiler_path} -o ${output_path} -t ${t} -run ${input_path}`.quiet());
-        executed[test_name][t] = output.exitCode == 0 ? 'ok' : 'run fail';
-        continue;
+
+      const Exec = opt.silent ? CmdSilent : Cmd;
+      switch (ext) {
+        case 'js':
+          output = yield* Exec`bun run ${output_path}`;
+          break;
+
+        case 'go':
+          output = yield* Exec`go run ${output_path}`;
+          break;
+
+        default:
+          throw new Error(`No runner is setup for target ${name}`);
       }
-      output = yield* $Y($`${compiler_path} -o ${output_path} -t ${t} -run ${input_path}`);
-      executed[test_name][t] = output.exitCode == 0 ? 'ok' : 'run fail';
+      executed[test_name][name] = output.exitCode == 0 ? 'ok' : 'run fail';
     }
   }
 
@@ -139,9 +195,9 @@ $$exec(function* main(args) {
   for (const test_name of Object.keys(executed)) {
     const test = success[test_name]!;
     let buf = `${test_name}:`;
-    for (const target of Object.keys(test)) {
-      const success_status = test[target as keyof typeof test]!;
-      const executd_status = executed[test_name]![target as keyof typeof test];
+    for (const target of Object.keys(test) as Array<keyof typeof test>) {
+      const success_status = test[target]!;
+      const executd_status = executed[test_name]![target];
       const status: 'untested' | 'ok' | 'failed' = success_status == 'untested'
         ? (executd_status == 'untested' ? 'untested' : executd_status == 'ok' ? 'ok' : 'failed')
         : executd_status == success_status

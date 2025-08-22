@@ -9,7 +9,10 @@ import type {
   TargetCodeGen,
   TargetCodeGenSetupConfig,
 } from './utils';
-import { compiler_logger, ensure_valid_output_path_from_input_path, get_current_line, pipe } from './utils';
+import type {
+  PrimitiveType,
+} from './typechecker';
+import { compiler_logger, ensure_valid_output_path_from_input_path, get_current_line, pipe, unreachable } from './utils';
 
 const get_indent_from_lvl = (lvl: number) => lvl == 0 ? '' : Array.from({ length: lvl }).map(() => '\t').join('');;
 
@@ -166,25 +169,29 @@ class GoCodegen implements TargetCodeGen {
     return false;
   }
 
-  adapt_native_type_name(type_name: string) {
+  adapt_native_type_name(type_name: PrimitiveType['base'] | (string & {})) {
     switch (type_name) {
-      case 'u8': return 'uint8';
-      case 'i8': return 'int8';
+      case 'ui8': return 'uint8';
+      case 'si8': return 'int8';
 
-      case 'u32': return 'uint32';
-      case 'i32': return 'int32';
+      case 'ui32': return 'uint32';
+      case 'si32': return 'int32';
 
-      case 'u64': return 'uint64';
-      case 'i64': return 'int64';
+      case 'ui64': return 'uint64';
+      case 'si64': return 'int64';
 
-      case 'usz': return 'uint';
-      case 'isz': return 'int';
+      case 'uisz': return 'uint';
+      case 'sisz': return 'int';
+
+      case 'flt32': return 'float32';
+      case 'flt64': return 'float64';
 
       // case '()': return '';
     }
     return type_name;
   }
 
+  // TODO: We should recieve the actual typed node produced by the TypeChecker
   adapt_node_native_type_names(node: AstNode | null) {
     if (!node) return;
     const adapt_native_type_name = this.adapt_native_type_name.bind(this);
@@ -193,15 +200,17 @@ class GoCodegen implements TargetCodeGen {
     switch (node.kind) {
       case AstNodeKind.EOF: break;
       case AstNodeKind.FuncDclArg: {
-        // TODO: Once TypeChecker is made remove this conditionally added int type
-        node.type = node.type == '()' ? 'int' : adapt_native_type_name(node.type);
+        if (node.type == '()') unreachable('Failed to infer type of argument ' + node.name);
+        node.type = adapt_native_type_name(node.type);
       } break;
       case AstNodeKind.FuncDecl: {
+        if (node.returns == '()') unreachable('Failed to infer the return type of function ' + node.name);
         node.returns = adapt_native_type_name(node.returns);
         for (const n of node.args) adapt_node_native_type_names(n);
         for (const n of node.body) adapt_node_native_type_names(n);
       } break;
       case AstNodeKind.VarDecl: {
+        if (node.type.name == '()') unreachable('Failed to infer the type of variable ' + node.name);
         node.type.name = adapt_native_type_name(node.type.name);
         adapt_node_native_type_names(node.init);
       } break;
@@ -288,13 +297,16 @@ class GoCodegen implements TargetCodeGen {
       case AstNodeKind.Ident: return indent + node.ident;
 
       case AstNodeKind.VarDecl: {
-        if (!node.init) return `${indent}var ${node.name} int`;
+        if (!node.init) return `${indent}var ${node.name} ${node.type.name}`;
         const init = node_to_code(node.init);
         if (typeof init != 'string') return init;
         if (node.type.name == '()' && indent_lvl > 0) {
           return indent + `${node.name} := ${init}`;
         }
-        const type_name = node.type.name == '()' ? 'int' : node.type.name;
+        if (node.type.name == '()') {
+          throw new Error('Variable type has not been inferred');
+        }
+        const type_name = node.type.name;
         return indent + `var ${node.name} ${type_name} = ${init}`;
       }
 
