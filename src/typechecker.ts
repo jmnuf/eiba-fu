@@ -571,8 +571,7 @@ function get_func_body_and_args_types(
         const type_result = get_type(fn_ctx, n);
         if (!type_result.ok) {
           console.log(fn_ctx.input_path + ':' + n.pos.line + ':' + n.pos.column, '[INFO] Failed here');
-          // TODO: Error reporting, we are now crashing just for the sake of ease of my mind
-          throw new Error(type_result.error ?? 'Failed to get the type for var declaration');
+          return Result.Err(type_result.error ?? 'Failed to get the type for var declaration');
         }
         fn_ctx.add_var({
           loc: null,
