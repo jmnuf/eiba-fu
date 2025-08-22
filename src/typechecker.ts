@@ -1588,7 +1588,9 @@ export function check_types(
               }
               const earg_t = i >= fn_t.args.length - 1 ? fn_t.variadic.type ?? T.any : fn_t.args[i]!.type;
               if (!types_are_equivalent(earg_t, carg_t)) {
-                eprintln(ctx.input_path, pos, `Invalid type used in function call, expected type '${earg_t}' but got '${carg_t}'`);
+                const e_t = get_type_name(earg_t);
+                const c_t = get_type_name(carg_t);
+                eprintln(ctx.input_path, pos, `Invalid type used in function call, expected type '${e_t}' but got '${c_t}'`);
                 failed = true;
                 continue;
               }
