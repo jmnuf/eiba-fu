@@ -707,10 +707,9 @@ function types_are_equivalent(a: LangType, b: LangType): boolean {
       const fa = a;
       const fb = b as FuncType;
       if (fa.args.length != fb.args.length) return false;
-      if (fa.args.some((argA, idx) => types_are_equivalent(argA.type, fb.args[idx]!.type))) return false;
+      if (fa.args.some((argA, idx) => !types_are_equivalent(argA.type, fb.args[idx]!.type))) return false;
       return types_are_equivalent(fa.returns, fb.returns);
     };
-
     case 'struct': {
       const sa = a;
       const sb = b as StructType;
