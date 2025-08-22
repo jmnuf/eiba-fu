@@ -704,27 +704,50 @@ function types_are_equivalent(a: LangType, b: LangType): boolean {
     };
 
     case 'func': {
-      const fa = a;
+      const fa = a as FuncType;
       const fb = b as FuncType;
       if (fa.args.length != fb.args.length) return false;
       if (fa.args.some((argA, idx) => !types_are_equivalent(argA.type, fb.args[idx]!.type))) return false;
       return types_are_equivalent(fa.returns, fb.returns);
     };
+
+    case 'array': {
+      const aa = a as ArrayType;
+      const ab = b as ArrayType;
+      return aa.size === ab.size && types_are_equivalent(aa.base, ab.base);
+    };
+
     case 'struct': {
-      const sa = a;
+      const sa = a as StructType;
       const sb = b as StructType;
-      return sa.fields.every((fa, idx) => types_are_equivalent(fa.type, sb.fields[idx]!.type));
+      if (sa.fields.length !== sb.fields.length) return false;
+      return sa.fields.every((fa, idx) => {
+        const fb = sb.fields[idx]!;
+        return fa.name === fb.name && types_are_equivalent(fa.type, fb.type);
+      });
     };
 
     case 'enum': {
-      const ea = a;
+      const ea = a as EnumType;
       const eb = b as EnumType;
       if (ea.name !== eb.name) {
         return false;
       }
-      return ea.values.every((eai, i) => eai.name === eb.values[i]!.name && eai.value === eb.values[i]!.value);
+      return ea.values.every((eai, i) =>
+        eai.name === eb.values[i]!.name && eai.value === eb.values[i]!.value
+      );
+    };
+
+    case 'tagged-union': {
+      const ua = a as TaggedUnionType;
+      const ub = b as TaggedUnionType;
+      if (ua.name !== ub.name || ua.values.length !== ub.values.length) return false;
+      return ua.values.every((va, i) =>
+        va.name === ub.values[i]!.name && types_are_equivalent(va.type, ub.values[i]!.type)
+      );
     };
   }
+
   return false;
 }
 
