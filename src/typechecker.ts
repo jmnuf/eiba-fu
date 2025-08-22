@@ -630,7 +630,7 @@ function get_func_body_and_args_types(
   }
   // console.log('[DEBUG] Inferred return of', get_type_name(returns), 'from the user', parsed_node.returns);
 
-  if (returns == null) return Result.Err(`The return value is unabled to be inferred`);
+  if (returns == null) return Result.Err(`The return value is unable to be inferred`);
 
   return Result.Ok({ fn_ctx, args, returns });
 }
@@ -1037,7 +1037,7 @@ export function get_type(
           });
           if (parsed_node.type.general == 'number') {
             if (!is_number(init_type)) {
-              return Result.Err('Inialization should be a number');
+              return Result.Err('Initialization should be a number');
             }
           }
           parsed_node.type.name = get_type_name(init_type);
@@ -1240,7 +1240,7 @@ export function get_type(
     };
   }
 
-  if (!typed_node) return Result.Err('Unabled to figure out type for node ' + node_debug_fmt(parsed_node));
+  if (!typed_node) return Result.Err('Unable to figure out type for node ' + node_debug_fmt(parsed_node));
 
   return Result.Ok(typed_node);
 }
@@ -1311,7 +1311,7 @@ function register_variable(ctx: TypesContext, parsed_node: VarDeclNode): Result<
     });
     if (parsed_node.type.general == 'number') {
       if (!is_number(init_type)) {
-        return Result.Err('Inialization should be a number');
+        return Result.Err('Initialization should be a number');
       }
     }
 
@@ -1720,7 +1720,7 @@ export function check_types(
         console.error(`${ctx.input_path}:${line}:${column}: Attempting to call ${type_name} variable '${node.name}' as a function`);
         return false;
       }
-      const fn_t = fn.type;
+
       const fn_t = fn.type;
       if (node.args.length !== fn_t.args.length && fn_t.variadic == null) {
         const { line, column } = node.pos;
