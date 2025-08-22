@@ -480,7 +480,7 @@ function get_function_returns(ctx: TypesContext, body: Array<Exclude<AstNode, Eo
         continue;
       }
       const result = get_type(ctx, n.expr);
-      if (!result.ok) return Result.Err(result.error ?? 'Failed to assume type for ' + node_debug_fmt(n));
+      if (!result.ok) return Result.Err(result.error);
       returns.push(result.value);
     }
   }
@@ -571,7 +571,7 @@ function get_func_body_and_args_types(
         const type_result = get_type(fn_ctx, n);
         if (!type_result.ok) {
           console.log(fn_ctx.input_path + ':' + n.pos.line + ':' + n.pos.column, '[INFO] Failed here');
-          return Result.Err(type_result.error ?? 'Failed to get the type for var declaration');
+          return Result.Err(type_result.error);
         }
         fn_ctx.add_var({
           loc: null,
@@ -606,7 +606,7 @@ function get_func_body_and_args_types(
         continue;
       }
       const r = get_type(fn_ctx, n.expr);
-      if (!r.ok) return Result.Err(r.error ?? 'Failed to naively guess the type');
+      if (!r.ok) return Result.Err(r.error);
       returned.push(r.value);
     }
     if (returned.length === 0) {
@@ -908,7 +908,7 @@ function set_t_origin<T extends LangType>(ctx: TypesContext, t: T, n: Exclude<As
 export function get_type(
   ctx: TypesContext,
   parsed_node: Exclude<AstNode, EoFNode> | null | undefined
-): Result<LangType, 'NULL' | (string & {}) | undefined> {
+): Result<LangType, 'NULL' | (string & {})> {
   if (!parsed_node) return Result.Err('NULL');
 
   let typed_node: LangType | null = null;
@@ -1111,14 +1111,12 @@ export function get_type(
         return Result.Err('Failed to read binop branch: ' + lhs_node.kind);
       }
       const lhs_t = lhs_t_result.value;
-      if (!lhs_t) return Result.Err(undefined);
 
       if (!rhs_t_result.ok) {
         if (rhs_t_result.error) return Result.Err(`Failed to read binop branch: ${rhs_t_result.error}`);
         return Result.Err('Failed to read binop branch: ' + rhs_node.kind);
       }
       const rhs_t = rhs_t_result.value;
-      if (!rhs_t) return Result.Err(undefined);
 
       if (is_math_operator(op)) {
         if (!is_number(lhs_t)) {
@@ -1233,7 +1231,7 @@ export function get_type(
     case AstNodeKind.Expr: {
       if (!parsed_node.item) return Result.Ok(T.void);
       const result = get_type(ctx, parsed_node.item);
-      if (!result.ok) return Result.Err(result.error ?? 'Could not read type of enclosed expression');
+      if (!result.ok) return Result.Err(result.error);
       typed_node = result.value;
     } break;
 
@@ -1662,7 +1660,7 @@ export function check_types(
         const val_node = pipe.val;
         const val_result = get_type(ctx, val_node);
         if (!val_result.ok) {
-          eprintln(ctx.input_path, val_node.pos, val_result.error ?? 'Failed to assume type of ' + node_debug_fmt(val_node));
+          eprintln(ctx.input_path, val_node.pos, val_result.error);
           return false;
         }
 
