@@ -539,8 +539,7 @@ function get_func_body_and_args_types(
       return Result.Err(`${ctx.input_path}:${n.pos.line}:${n.pos.column}: No types provided for function argument ${n.name}`);
     }
     const type_result = parse_type_from_str(fn_ctx, n.type);
-    // TODO: Actually just return the error once we are sure we are fine with the error handling level
-    if (!type_result.ok) throw new Error(type_result.error);
+    if (!type_result.ok) return Result.Err(type_result.error);
 
     args.push({ name: n.name, type: type_result.value });
 
