@@ -1,9 +1,7 @@
 # eiba-fu
 
 A simple transpiler that done for personal research/testing purposes and for fun.
-If you want to try it out, [Bun](https://bun.sh) is required to build/run the compiler.
-
-This project was created using `bun init` in bun v1.2.17. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+If you want to try it out, [Bun](https://bun.sh) v1.2.19 or higher is required to build/run the compiler.
 
 You can see the examples presented in the ./examples/ folder to garner a look at what can be done in this toy language.
 Here is also an example showcase on how the language looks:
