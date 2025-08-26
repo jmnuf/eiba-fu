@@ -1,4 +1,6 @@
-import type { CursorPosition } from './utils';
+import type { LexerToken } from './tags';
+import { LexerTokenKind } from './tags';
+import { Result } from './utils';
 
 export const Keywords = {
   Func: 'fn',
@@ -9,69 +11,6 @@ export const Keywords = {
 type KeywordsMap = typeof Keywords;
 type Keyword = KeywordsMap[keyof KeywordsMap];
 const is_keyword = (s: string): s is Keyword => Object.values(Keywords).includes(s as Keyword);
-
-export const TokenKind = Object.freeze({
-  EOF: 'EoF',
-  Symbol: 'Symbol',
-  Ident: 'Identifier',
-  Keyword: 'Keyword',
-  Integer: 'Integer',
-  String: 'String',
-} as const);
-
-export type TokenKindsMap = (typeof TokenKind);
-
-export type TokenKind = (typeof TokenKind)[keyof (typeof TokenKind)];
-
-// interface TokenKindMap {
-//   EOF: {
-//     kind: 'EoF';
-//     pos: CursorPosition;
-//   };
-//   Symbol: {
-//   };
-// }
-
-export type EOFToken = {
-  kind: TokenKindsMap['EOF'];
-  pos: CursorPosition;
-}
-export type SymToken = {
-  kind: TokenKindsMap['Symbol'];
-  pos: CursorPosition;
-  sym: string;
-}
-export type IdentToken = {
-  kind: TokenKindsMap['Ident'];
-  pos: CursorPosition;
-  ident: string;
-}
-export type IntToken = {
-  kind: TokenKindsMap['Integer'];
-  pos: CursorPosition;
-  int: number;
-}
-
-export type StrToken = {
-  kind: TokenKindsMap['String'];
-  pos: CursorPosition;
-  string: string;
-}
-
-export type KeywordToken = {
-  kind: TokenKindsMap['Keyword'];
-  pos: CursorPosition;
-  kword: Keyword;
-}
-
-export type Token =
-  | EOFToken
-  | SymToken
-  | IdentToken
-  | KeywordToken
-  | IntToken
-  | StrToken
-  ;
 
 const is_whitespace = (ch: string) => ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r';
 
@@ -93,7 +32,7 @@ class SimpLexer {
   private line: number;
   private column: number;
   private buf: string;
-  #tok: Token;
+  #tok: LexerToken;
 
   constructor(buf: string) {
     this.buf = buf;
@@ -108,14 +47,14 @@ class SimpLexer {
     return this.cursor >= this.buf.length;
   }
 
-  next(): Token {
+  next(): Result<LexerToken, string> {
     const buf = this.buf;
     if (this.cursor >= buf.length || buf.length == 0) {
       this.#tok = {
-        kind: TokenKind.EOF,
+        kind: LexerTokenKind.EOF,
         pos: { line: this.line, column: this.column },
       };
-      return this.#tok;
+      return Result.Ok(this.#tok);
     }
 
     while (this.cursor < buf.length) {
@@ -123,10 +62,10 @@ class SimpLexer {
       if (!ch) {
         this.cursor = buf.length;
         this.#tok = {
-          kind: TokenKind.EOF,
+          kind: LexerTokenKind.EOF,
           pos: { line: this.line, column: this.column },
         };
-        return this.#tok;
+        return Result.Ok(this.#tok);
       }
       this.column++;
 
@@ -151,10 +90,10 @@ class SimpLexer {
       }
       if (!ch) {
         this.#tok = {
-          kind: TokenKind.EOF,
+          kind: LexerTokenKind.EOF,
           pos: { line: this.line, column: this.column },
         };
-        return this.#tok;
+        return Result.Ok(this.#tok);
       }
       this.cursor--;
       return this.next();
@@ -185,34 +124,34 @@ class SimpLexer {
       }
 
       this.#tok = {
-        kind: TokenKind.String,
+        kind: LexerTokenKind.String,
         pos: { line, column },
         string: str,
       };
 
-      return this.#tok;
+      return Result.Ok(this.#tok);
     }
 
     if (ch == '&' && buf[this.cursor + 1] == '&') {
       this.cursor++;
       this.column++;
       this.#tok = {
-        kind: TokenKind.Symbol,
+        kind: LexerTokenKind.Symbol,
         pos: { line, column },
         sym: '&&',
       };
-      return this.#tok;
+      return Result.Ok(this.#tok);
     }
 
     if (ch == '|' && buf[this.cursor + 1] == '|') {
       this.cursor++;
       this.column++;
       this.#tok = {
-        kind: TokenKind.Symbol,
+        kind: LexerTokenKind.Symbol,
         pos: { line, column },
         sym: '||',
       };
-      return this.#tok;
+      return Result.Ok(this.#tok);
     }
 
     if (ch == '=') {
@@ -221,11 +160,11 @@ class SimpLexer {
         this.cursor++;
         this.column++;
         this.#tok = {
-          kind: TokenKind.Symbol,
+          kind: LexerTokenKind.Symbol,
           pos: { line, column },
           sym: `${ch}${next}`,
         };
-        return this.#tok;
+        return Result.Ok(this.#tok);
       }
     }
 
@@ -233,11 +172,11 @@ class SimpLexer {
       this.cursor++;
       this.column++;
       this.#tok = {
-        kind: TokenKind.Symbol,
+        kind: LexerTokenKind.Symbol,
         pos: { line, column },
         sym: '!=',
       };
-      return this.#tok;
+      return Result.Ok(this.#tok);
     }
 
     if (ch == '>') {
@@ -246,11 +185,11 @@ class SimpLexer {
         this.cursor++;
         this.column++;
         this.#tok = {
-          kind: TokenKind.Symbol,
+          kind: LexerTokenKind.Symbol,
           pos: { line, column },
           sym: `${ch}${next}`,
         };
-        return this.#tok;
+        return Result.Ok(this.#tok);
       }
     }
 
@@ -260,11 +199,11 @@ class SimpLexer {
         this.cursor++;
         this.column++;
         this.#tok = {
-          kind: TokenKind.Symbol,
+          kind: LexerTokenKind.Symbol,
           pos: { line, column },
           sym: `${ch}${next}`,
         };
-        return this.#tok;
+        return Result.Ok(this.#tok);
       }
     }
 
@@ -274,11 +213,11 @@ class SimpLexer {
         this.cursor++;
         this.column++;
         this.#tok = {
-          kind: TokenKind.Symbol,
+          kind: LexerTokenKind.Symbol,
           pos: { line, column },
           sym: `${ch}${next}`,
         };
-        return this.#tok;
+        return Result.Ok(this.#tok);
       }
     }
 
@@ -289,11 +228,11 @@ class SimpLexer {
         this.cursor++;
         this.column++;
         this.#tok = {
-          kind: TokenKind.Symbol,
+          kind: LexerTokenKind.Symbol,
           pos: { line, column },
           sym: `${ch}${next}`,
         };
-        return this.#tok;
+        return Result.Ok(this.#tok);
       }
 
       if (is_num_ch(next)) {
@@ -316,12 +255,13 @@ class SimpLexer {
       if (negative) int = -int;
 
       this.#tok = {
-        kind: TokenKind.Integer,
+        kind: LexerTokenKind.Number,
         pos: { line, column },
-        int,
+        is_float: false,
+        num: int,
       };
 
-      return this.#tok;
+      return Result.Ok(this.#tok);
     }
 
     if (is_valid_ident_ch(ch!)) {
@@ -336,45 +276,47 @@ class SimpLexer {
 
       if (is_keyword(str)) {
         this.#tok = {
-          kind: TokenKind.Keyword,
+          kind: LexerTokenKind.Keyword,
           pos: { line, column },
-          kword: str,
+          word: str,
         };
-        return this.#tok;
+        return Result.Ok(this.#tok);
       }
 
       this.#tok = {
-        kind: TokenKind.Ident,
+        kind: LexerTokenKind.Ident,
         pos: { line, column },
         ident: str,
       };
-      return this.#tok;
+      return Result.Ok(this.#tok);
     }
 
 
     this.#tok = {
-      kind: TokenKind.Symbol,
+      kind: LexerTokenKind.Symbol,
       pos: { line, column },
       sym: ch!,
     };
-    return this.#tok;
+    return Result.Ok(this.#tok);
   }
 
   peek() {
-    return this.clone().next();
+    const result = this.clone().next();
+    if (!result.ok) return null;
+    return result.value;
   }
 
-  get_token(): Token {
+  get_token(): LexerToken {
     return this.#tok;
   }
 
   get_symbol(): string {
-    if (this.#tok.kind !== TokenKind.Symbol) return '';
+    if (this.#tok.kind !== LexerTokenKind.Symbol) return '';
     return this.#tok.sym;
   }
 
   get_ident(): string {
-    if (this.#tok.kind !== TokenKind.Ident) return '';
+    if (this.#tok.kind !== LexerTokenKind.Ident) return '';
     return this.#tok.ident;
   }
 
