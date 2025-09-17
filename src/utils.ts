@@ -1,7 +1,14 @@
 // @ts-ignore
 import getCurrentLine from 'get-current-line';
 
-import type { AstNode, Parser, VarDeclNode, FnDeclNode } from './parser';
+import type {
+  ParserNode as AstNode,
+  ParserNodesMap,
+} from './tags';
+import type { Parser } from './parser';
+
+type VarDeclNode = ParserNodesMap['VarDecl'];
+type FnDeclNode = ParserNodesMap['FuncDecl'];
 
 export type Prettify<T> = { [K in keyof T]: T[K] } & unknown;
 

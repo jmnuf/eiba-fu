@@ -1,4 +1,8 @@
-import { AstNodeKind, pipe_node_to_fn_call_node, type AstNode } from './parser';
+import {
+  type ParserNode as AstNode,
+  ParserNodeKind as AstNodeKind,
+} from './tags';
+import { pipe_node_to_fn_call_node } from './parser';
 import {
   ensure_valid_output_path_from_input_path,
   get_current_line,
@@ -65,8 +69,8 @@ class JavascriptCodegen implements TargetCodeGen {
     let code: string | null = null;
     switch (node.kind) {
       case AstNodeKind.EOF: code = ''; break;
-      case AstNodeKind.Ident: code = node.ident; break;
-      case AstNodeKind.FuncDclArg: code = node.name; break;
+      case AstNodeKind.Identifier: code = node.ident; break;
+      case AstNodeKind.FuncArgDecl: code = node.name; break;
       case AstNodeKind.Literal: {
         if (node.type == 'int') {
           code = node.value.toString(10);
@@ -94,7 +98,7 @@ class JavascriptCodegen implements TargetCodeGen {
         }
       } break;
 
-      case AstNodeKind.Expr: {
+      case AstNodeKind.Grouped: {
         const expr = node_to_code(node.item);
         if (typeof expr != 'string') return expr;
         code = !node.item ? '()' : `(${expr})`;
@@ -119,7 +123,7 @@ class JavascriptCodegen implements TargetCodeGen {
         );
       } break;
 
-      case AstNodeKind.PipeOp: {
+      case AstNodeKind.PipeOperator: {
         const res = pipe(
           node,
           pipe_node_to_fn_call_node,
@@ -141,7 +145,7 @@ class JavascriptCodegen implements TargetCodeGen {
         const body = [] as string[];
         let full_body: string;
         const last_stmt = node.body[node.body.length - 1]!
-        const tailcalling = (last_stmt.kind == 'fncal' && last_stmt.name == node.name && last_stmt.args.length == node.args.length);
+        const tailcalling = (last_stmt.kind == AstNodeKind.FuncCall && last_stmt.name == node.name && last_stmt.args.length == node.args.length);
 
         if (tailcalling) {
           for (const b of node.body.slice(0, node.body.length - 1)) {
@@ -178,7 +182,7 @@ class JavascriptCodegen implements TargetCodeGen {
 
       case AstNodeKind.IfElse: {
         const if_body: string[] = [];
-        for (const b of node.body) {
+        for (const b of node.if_body) {
           const bc = node_to_code(b, indent_lvl + 1);
           if (typeof bc != 'string') return bc;
           if_body.push(bc);
@@ -186,7 +190,7 @@ class JavascriptCodegen implements TargetCodeGen {
 
         const cond = node_to_code(node.cond);
         if (typeof cond != 'string') return cond;
-        if (!node.else) {
+        if (!node.else_body) {
           code = pipe(
             [cond, if_body.join(';\n')] as const,
             ([cond, body]) => `if (${cond}) {\n${body}\n${indent}}`,
@@ -195,7 +199,7 @@ class JavascriptCodegen implements TargetCodeGen {
         }
 
         const else_body: string[] = [];
-        for (const b of node.else) {
+        for (const b of node.else_body) {
           const bc = node_to_code(b, indent_lvl + 1);
           if (typeof bc != 'string') return bc;
           else_body.push(bc);

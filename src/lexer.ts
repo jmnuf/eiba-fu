@@ -1,5 +1,6 @@
 import type { LexerToken } from './tags';
 import { LexerTokenKind } from './tags';
+import type { CursorPosition } from './utils';
 import { Result } from './utils';
 
 export const Keywords = {
@@ -320,8 +321,8 @@ class SimpLexer {
     return this.#tok.ident;
   }
 
-  get_pos() {
-    return this.#tok.pos;
+  get_pos(): CursorPosition {
+    return { line: this.line, column: this.column };
   }
 
   clone() {
