@@ -1,5 +1,21 @@
 import type { CursorPosition } from './utils';
 
+export const Keyword = Object.freeze({
+  Fn: 'fn',
+  Function: 'function',
+  If: 'if',
+  Else: 'else',
+  Return: 'return',
+  Let: 'let',
+} as const);
+export type KeywordsMap = typeof Keyword;
+export type Keyword = KeywordsMap[keyof KeywordsMap];
+const keywords_array = Object.values(Keyword) as Array<Keyword>;
+export function is_keyword(word: string): word is Keyword {
+  if (word.length <= 1) return false;
+  return keywords_array.includes(word as any);
+}
+
 export interface LexerTokensMap {
   EOF: {
     kind: 'eof';
@@ -21,7 +37,7 @@ export interface LexerTokensMap {
   Keyword: {
     kind: 'keyword';
     pos: CursorPosition;
-    word: string;
+    word: Keyword,
   };
 
   Number: {

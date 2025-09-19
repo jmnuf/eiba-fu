@@ -1,17 +1,8 @@
 import type { LexerToken } from './tags';
-import { LexerTokenKind } from './tags';
+import { LexerTokenKind, is_keyword } from './tags';
 import type { CursorPosition } from './utils';
 import { Result } from './utils';
 
-export const Keywords = {
-  Func: 'fn',
-  If: 'if',
-  Ret: 'return',
-  Var: 'let',
-} as const;
-type KeywordsMap = typeof Keywords;
-type Keyword = KeywordsMap[keyof KeywordsMap];
-const is_keyword = (s: string): s is Keyword => Object.values(Keywords).includes(s as Keyword);
 
 const is_whitespace = (ch: string) => ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r';
 
