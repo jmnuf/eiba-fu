@@ -52,11 +52,36 @@ export type LexerTokenKind = LexerTokenKindsMap[keyof LexerTokenKindsMap];
 export type LexerToken = LexerTokensMap[keyof LexerTokensMap];
 
 
-export interface BinopOperatorsMap {
-  Math: '+' | '-' | '/' | '*' | '%';
-  Comparison: '>' | '<' | '==' | '<=' | '>=' | '!=';
-  Logical: '&&' | '||';
+export const BinopOperators = Object.freeze({
+  Math: ['+', '-', '/', '*', '%'],
+  Comparison: ['>', '<', '==', '<=', '>=', '!='],
+  Logical: ['&&', '||'],
+} as const);
+export type BinopOperatorsMap = { [K in keyof typeof BinopOperators]: typeof BinopOperators[K][number]; }
+export type MathBinopOperator = (typeof BinopOperators)['Math'][number];
+export type ComparisonBinopOperator = (typeof BinopOperators)['Comparison'][number];
+export type LogicalBinopOperator = (typeof BinopOperators)['Logical'][number];
+export type BinopOperator = BinopOperatorsMap[keyof BinopOperatorsMap];
+
+export const binop_checker = Object.freeze({
+  is_math_operator: (v: any): v is BinopOperatorsMap['Math'] => BinopOperators.Math.includes(v),
+  is_comparison_operator: (v: any): v is BinopOperatorsMap['Comparison'] => BinopOperators.Comparison.includes(v),
+  is_logical_operator: (v: any): v is BinopOperatorsMap['Logical'] => BinopOperators.Logical.includes(v),
+  is_binop: (v: any): v is BinopOperator => BinopOperators.Math.includes(v) || BinopOperators.Comparison.includes(v) || BinopOperators.Logical.includes(v),
+} as const);
+
+export function is_binop(val: string): val is BinopOperator {
+  if (BinopOperators.Math.includes(val as any)) return true;
+  if (BinopOperators.Comparison.includes(val as any)) return true;
+  if (BinopOperators.Logical.includes(val as any)) return true;
+  return false;
 }
+
+// export interface BinopOperatorsMap {
+//   Math: '+' | '-' | '/' | '*' | '%';
+//   Comparison: '>' | '<' | '==' | '<=' | '>=' | '!=';
+//   Logical: '&&' | '||';
+// }
 
 export interface ParserNodesMap {
   EOF: { kind: 'eof'; };
@@ -87,17 +112,23 @@ export interface ParserNodesMap {
   Binop: {
     kind: 'binary_operator';
     pos: CursorPosition;
-    op: BinopOperatorsMap[keyof BinopOperatorsMap];
-    lhs: SimpParserNode;
-    rhs: SimpParserNode;
+    op: BinopOperator;
+    lhs: BinopItemParserNode;
+    rhs: BinopItemParserNode;
   };
 
-  // type PipeChainables = IdentNode | FnCallNode;
-  PipeOperator: {
-    kind: 'pipe_operator';
+  PipeOperatorHead: {
+    kind: 'pipe_operator_head';
     pos: CursorPosition;
-    val: Exclude<ExprParserNode, ParserNodesMap['PipeOperator']>;
-    next: ParserNodesMap['PipeOperator'] | null;
+    val: ExprParserNode;
+    next: ParserNodesMap['PipeOperatorTail'];
+  };
+
+  PipeOperatorTail: {
+    kind: 'pipe_operator_tail';
+    pos: CursorPosition;
+    val: ParserNodesMap['Identifier'] | ParserNodesMap['FuncCall'];
+    next: ParserNodesMap['PipeOperatorTail'] | null;
   };
 
   Literal: {
@@ -171,7 +202,7 @@ export type ExprParserNode =
   | ParserNodesMap['Grouped']
   | ParserNodesMap['Literal']
   | ParserNodesMap['Identifier']
-  | ParserNodesMap['PipeOperator']
+  | ParserNodesMap['PipeOperatorHead']
   ;
 
 export const ParserNodeKind = Object.freeze({
@@ -181,7 +212,8 @@ export const ParserNodeKind = Object.freeze({
   FuncCall: 'call_fn',
   VarDecl: 'var_decl',
   Binop: 'binary_operator',
-  PipeOperator: 'pipe_operator',
+  PipeOperatorHead: 'pipe_operator_head',
+  PipeOperatorTail: 'pipe_operator_tail',
   Grouped: 'grouped_expression',
   Keyword: 'keyword',
   IfElse: 'if-else',
