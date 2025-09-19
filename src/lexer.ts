@@ -4,20 +4,27 @@ import type { CursorPosition } from './utils';
 import { Result } from './utils';
 
 
-const is_whitespace = (ch: string) => ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r';
+function is_char_whitespace(char: number) {
+  return char == 9 || char == 10 || char == 13 || char == 32;
+}
 
-const ALPHABET_CHARS = Object.freeze([
-  'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-]);
-const NUMERIC_CHARS = Object.freeze([
-  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-] as const);
+function is_char_alphabetic(char: number) {
+  //      65 = 'A'          90 = 'Z'    97 = 'a'         122 = 'z'
+  return (65 <= char && char <= 90) || (97 <= char && char <= 122);
+}
 
-const is_alpha_ch = (ch: string) => ALPHABET_CHARS.includes(ch.toLowerCase() as any);
-const is_num_ch = (ch: string) => NUMERIC_CHARS.includes(ch as any);
-const is_alphanum_ch = (ch: string) => is_alpha_ch(ch) || is_num_ch(ch);
+function is_char_numeric(char: number) {
+  //     48 = '0'             57 = '9'
+  return 48 <= char && char <= 57;
+}
 
-const is_valid_ident_ch = (ch: string) => is_alphanum_ch(ch) || ch === '_';
+function is_char_alphanumeric(char: number) {
+  return is_char_alphabetic(char) || is_char_numeric(char);
+}
+
+function is_char_usable_for_an_identifier(char: number) {
+  return char == 95 || is_char_alphanumeric(char);
+}
 
 class SimpLexer {
   private cursor: number;
@@ -61,7 +68,7 @@ class SimpLexer {
       }
       this.column++;
 
-      if (is_whitespace(ch)) {
+      if (is_char_whitespace(ch.codePointAt(0)!)) {
         if (ch === '\n') {
           this.line++;
           this.column = 0;
@@ -73,6 +80,16 @@ class SimpLexer {
     }
 
     let ch = buf[this.cursor];
+    if (!ch) {
+      if (this.#tok && this.#tok.kind != LexerTokenKind.EOF) {
+        this.cursor = buf.length;
+        this.#tok = {
+          kind: LexerTokenKind.EOF,
+          pos: { line: this.line, column: this.column },
+        };
+      }
+      return Result.Ok(this.#tok);
+    }
     if (ch == '/' && buf[this.cursor + 1] == '/') {
       this.cursor++;
       this.column++;
@@ -91,6 +108,7 @@ class SimpLexer {
       return this.next();
     }
     const { line, column } = this;
+    let code = ch.codePointAt(0)!;
 
     if (ch === '`') {
       let str = ''; // TODO: Possibly should handle unterminated strings properly but it doesn't really matter right now
@@ -227,18 +245,20 @@ class SimpLexer {
         return Result.Ok(this.#tok);
       }
 
-      if (is_num_ch(next)) {
+      if (is_char_numeric(next.codePointAt(0)!)) {
         negative = true;
         ch = next;
+        code = next.codePointAt(0)!;
       }
     }
 
-    if (is_num_ch(ch!)) {
+    if (is_char_numeric(code)) {
       let str = '';
 
-      while (ch && is_num_ch(ch)) {
+      while (ch && is_char_numeric(code)) {
         str += ch;
         ch = buf[++this.cursor];
+        code = ch?.codePointAt(0) ?? 0;
         this.column++;
       }
       this.cursor--;
@@ -256,12 +276,13 @@ class SimpLexer {
       return Result.Ok(this.#tok);
     }
 
-    if (is_valid_ident_ch(ch!)) {
+    if (is_char_usable_for_an_identifier(code)) {
       let str = '';
 
-      while (ch && is_valid_ident_ch(ch)) {
+      while (ch && is_char_usable_for_an_identifier(code)) {
         str += ch;
         ch = buf[++this.cursor];
+        code = ch?.codePointAt(0) ?? 0;
         this.column++;
       }
       this.cursor--;
