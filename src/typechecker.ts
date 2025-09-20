@@ -1,11 +1,12 @@
 import type { Prettify, SourcePosition } from './utils';
 import { $todo, Result, get_current_line, pipe, unreachable } from './utils';
 import {
-  LexerTokenKind as TokenKind,
-  type ParserNode as AstNode,
-  type SimpParserNode as SimpNode,
-  ParserNodeKind as AstNodeKind,
+  LexerTokenKind,
+
+  type ParserNode,
+  type SimpParserNode,
   type ParserNodesMap,
+  ParserNodeKind,
 
   binop_checker,
 } from './tags';
@@ -474,10 +475,10 @@ export function get_type_name(t: LangType): string {
 }
 
 
-function get_function_returns(ctx: TypesContext, body: Array<Exclude<AstNode, EoFNode>>): Result<LangType[], string> {
+function get_function_returns(ctx: TypesContext, body: Array<Exclude<ParserNode, EoFNode>>): Result<LangType[], string> {
   const returns: LangType[] = [];
   for (const n of body) {
-    if (n.kind == AstNodeKind.IfElse) {
+    if (n.kind == ParserNodeKind.IfElse) {
       const result = get_function_returns(ctx.new_child_ctx(), n.if_body);
       if (!result.ok) return result;
       returns.push(...result.value);
@@ -488,7 +489,7 @@ function get_function_returns(ctx: TypesContext, body: Array<Exclude<AstNode, Eo
       }
       continue;
     }
-    if (n.kind == AstNodeKind.Keyword && n.word == 'return') {
+    if (n.kind == ParserNodeKind.Keyword && n.word == 'return') {
       if (!n.expr) {
         returns.push(T.void);
         continue;
@@ -502,19 +503,19 @@ function get_function_returns(ctx: TypesContext, body: Array<Exclude<AstNode, Eo
 }
 
 
-function ensure_return_type(ctx: TypesContext, t: LangType, body: Array<Exclude<AstNode, EoFNode>>, fn_body: boolean = false): string[] {
+function ensure_return_type(ctx: TypesContext, t: LangType, body: Array<Exclude<ParserNode, EoFNode>>, fn_body: boolean = false): string[] {
   const errors: string[] = [];
 
   let returns_count = 0;
   for (const n of body) {
-    if (n.kind == AstNodeKind.IfElse) {
+    if (n.kind == ParserNodeKind.IfElse) {
       errors.push(...ensure_return_type(ctx, t, n.if_body));
       if (n.else_body) {
         errors.push(...ensure_return_type(ctx, t, n.else_body));
       }
       continue;
     }
-    if (n.kind == AstNodeKind.Keyword) {
+    if (n.kind == ParserNodeKind.Keyword) {
       if (n.word != 'return') continue;
       returns_count++;
       const result = get_type(ctx, n);
@@ -581,7 +582,7 @@ function get_func_body_and_args_types(
 
     let returned: LangType[] = [];
     for (const n of parsed_node.body) {
-      if (n.kind == AstNodeKind.VarDecl) {
+      if (n.kind == ParserNodeKind.VarDecl) {
         const type_result = get_type(fn_ctx, n);
         if (!type_result.ok) {
           console.log(fn_ctx.input_path + ':' + n.pos.line + ':' + n.pos.column, '[INFO] Failed here');
@@ -596,7 +597,7 @@ function get_func_body_and_args_types(
         continue;
       }
 
-      if (n.kind == AstNodeKind.IfElse) {
+      if (n.kind == ParserNodeKind.IfElse) {
         const if_result = get_function_returns(fn_ctx, n.if_body);
         if (!if_result.ok) {
           return Result.Err(if_result.error);
@@ -613,7 +614,7 @@ function get_func_body_and_args_types(
 
         continue;
       }
-      if (n.kind != AstNodeKind.Keyword) continue;
+      if (n.kind != ParserNodeKind.Keyword) continue;
       if (n.word != 'return') continue;
       if (!n.expr) {
         returned.push(T.void);
@@ -652,7 +653,7 @@ function get_func_body_and_args_types(
 function parse_type_from_str(ctx: TypesContext, str: string): Result<LangType, string> {
   const l = Lex(str);
   let tok = l.next().unwrap();
-  if (tok.kind !== TokenKind.Ident) return Result.Err('Provided type has an invalid name.');
+  if (tok.kind !== LexerTokenKind.Ident) return Result.Err('Provided type has an invalid name.');
 
   const base_name = l.get_ident();
   const base_t = ctx.get_type(base_name);
@@ -664,18 +665,18 @@ function parse_type_from_str(ctx: TypesContext, str: string): Result<LangType, s
   let array_t: LangType = base_t;
   while (true) {
     tok = l.next().unwrap();
-    if (tok.kind == TokenKind.EOF) break;
-    if (tok.kind != TokenKind.Symbol) return Result.Err(`Unexpected ${tok.kind} when reading type name.`);
+    if (tok.kind == LexerTokenKind.EOF) break;
+    if (tok.kind != LexerTokenKind.Symbol) return Result.Err(`Unexpected ${tok.kind} when reading type name.`);
 
     let size: number | null = null;
     if (tok.sym != '[') return Result.Err(`Invalid symbol (${tok.sym}) in type name.`);
     tok = l.next().unwrap();
-    if (tok.kind != TokenKind.Symbol && tok.kind != TokenKind.Number) return Result.Err(`Unexpected ${tok.kind} when reading type name. Expected symbol ']'`);
-    if (tok.kind == TokenKind.Number) {
+    if (tok.kind != LexerTokenKind.Symbol && tok.kind != LexerTokenKind.Number) return Result.Err(`Unexpected ${tok.kind} when reading type name. Expected symbol ']'`);
+    if (tok.kind == LexerTokenKind.Number) {
       if (tok.is_float) return Result.Err('Unexpected float number: Array sizes must be provided as an integer');
       size = tok.num;
       tok = l.next().unwrap();
-      if (tok.kind != TokenKind.Symbol) return Result.Err(`Unexpected ${tok.kind} when reading type name. Expected symbol ']'`);
+      if (tok.kind != LexerTokenKind.Symbol) return Result.Err(`Unexpected ${tok.kind} when reading type name. Expected symbol ']'`);
     }
     if (tok.sym != ']') return Result.Err(`Invalid symbol (${tok.sym}) in type name. Expected symbol ']'`);
     const base = array_t ? array_t : base_t;
@@ -908,7 +909,7 @@ export function create_global_context(input_path: string): TypesContext {
   return ctx;
 }
 
-function set_t_origin<T extends LangType>(ctx: TypesContext, t: T, n: Exclude<AstNode, EoFNode>) {
+function set_t_origin<T extends LangType>(ctx: TypesContext, t: T, n: Exclude<ParserNode, EoFNode>) {
   return {
     ...t,
     origin: {
@@ -921,13 +922,13 @@ function set_t_origin<T extends LangType>(ctx: TypesContext, t: T, n: Exclude<As
 
 export function get_type(
   ctx: TypesContext,
-  parsed_node: Exclude<AstNode, EoFNode> | null | undefined
+  parsed_node: Exclude<ParserNode, EoFNode> | null | undefined
 ): Result<LangType, 'NULL' | (string & {})> {
   if (!parsed_node) return Result.Err('NULL');
 
   let typed_node: LangType | null = null;
   switch (parsed_node.kind) {
-    case AstNodeKind.FuncDecl: {
+    case ParserNodeKind.FuncDecl: {
       const result = get_func_body_and_args_types(ctx, parsed_node);
       if (!result.ok) return result;
       const info = result.value;
@@ -960,7 +961,7 @@ export function get_type(
       });
     } break;
 
-    case AstNodeKind.FuncArgDecl: {
+    case ParserNodeKind.FuncArgDecl: {
       if (parsed_node.type == '()') return Result.Err('No type was provided for argument ' + parsed_node.name);
       const result = parse_type_from_str(ctx, parsed_node.type);
       if (!result.ok) return result;
@@ -979,7 +980,7 @@ export function get_type(
       return Result.Ok(result.value);
     };
 
-    case AstNodeKind.Literal: {
+    case ParserNodeKind.Literal: {
       if (parsed_node.type == 'str') {
         typed_node = set_t_origin(ctx, T.string, parsed_node);
       } else if (parsed_node.type == 'int') {
@@ -991,7 +992,7 @@ export function get_type(
       }
     } break;
 
-    case AstNodeKind.FuncCall: {
+    case ParserNodeKind.FuncCall: {
       const fn_name = parsed_node.name;
       let ref = ctx.get_var(fn_name);
       if (!ref) return Result.Err(`Calling an undeclared function '${fn_name}'`);
@@ -999,7 +1000,7 @@ export function get_type(
       typed_node = ref.type.returns;
     } break;
 
-    case AstNodeKind.VarDecl: {
+    case ParserNodeKind.VarDecl: {
       if (parsed_node.init) {
         if (parsed_node.type.name != '()') {
           const var_usr_decl_type_result = parse_type_from_str(ctx, parsed_node.type.name);
@@ -1086,7 +1087,7 @@ export function get_type(
       }
     } break;
 
-    case AstNodeKind.PipeOperatorHead: {
+    case ParserNodeKind.PipeOperatorHead: {
       let pipe = parsed_node.next;
       // TODO: Check types of sequence instead of just finding the last item and returning its type
       while (pipe.next) {
@@ -1094,14 +1095,14 @@ export function get_type(
       }
       const val_kind = pipe.val.kind;
       switch (val_kind) {
-        case AstNodeKind.FuncCall: {
+        case ParserNodeKind.FuncCall: {
           const t_result = get_type(ctx, pipe.val);
           if (!t_result.ok) return Result.Err(`Failed to read type\n${t_result.error}`);
           const t = t_result.value as FuncType;
           typed_node = t.returns;
           break;
         }
-        case AstNodeKind.Identifier:
+        case ParserNodeKind.Identifier:
           // case AstNodeKind.Grouped:
           // case AstNodeKind.Literal:
           {
@@ -1118,7 +1119,7 @@ export function get_type(
       }
     } break;
 
-    case AstNodeKind.Binop: {
+    case ParserNodeKind.Binop: {
       const { op, lhs: lhs_node, rhs: rhs_node } = parsed_node;
       const lhs_t_result = get_type(ctx, lhs_node);
       const rhs_t_result = get_type(ctx, rhs_node);
@@ -1141,18 +1142,18 @@ export function get_type(
         if (!is_number(rhs_t)) {
           return Result.Err('Right side of math operation is not a number but has type `' + get_type_name(rhs_t) + '`');
         }
-        if (rhs_t.kind != 'enum' && lhs_node.kind == AstNodeKind.Identifier) {
+        if (rhs_t.kind != 'enum' && lhs_node.kind == ParserNodeKind.Identifier) {
           const lhs_v = ctx.get_var(lhs_node.ident);
-          if (lhs_v && lhs_v.decl && lhs_v.decl.kind == AstNodeKind.VarDecl) {
+          if (lhs_v && lhs_v.decl && lhs_v.decl.kind == ParserNodeKind.VarDecl) {
             if (lhs_v.decl.type.general == 'number') {
               lhs_v.decl.type.name = get_type_name(rhs_t);
               lhs_v.decl.type.general = null;
             }
           }
         }
-        if (lhs_t.kind != 'enum' && rhs_node.kind == AstNodeKind.Identifier) {
+        if (lhs_t.kind != 'enum' && rhs_node.kind == ParserNodeKind.Identifier) {
           const rhs_v = ctx.get_var(rhs_node.ident);
-          if (rhs_v && rhs_v.decl && rhs_v.decl.kind == AstNodeKind.VarDecl) {
+          if (rhs_v && rhs_v.decl && rhs_v.decl.kind == ParserNodeKind.VarDecl) {
             if (rhs_v.decl.type.general == 'number') {
               rhs_v.decl.type.name = get_type_name(lhs_t);
               rhs_v.decl.type.general = null;
@@ -1188,18 +1189,18 @@ export function get_type(
           return Result.Err('Right side of comparison operator must be a number, but it has type `' + rhs_name + '`');
         }
 
-        if (rhs_t.kind != 'enum' && lhs_node.kind == AstNodeKind.Identifier) {
+        if (rhs_t.kind != 'enum' && lhs_node.kind == ParserNodeKind.Identifier) {
           const lhs_v = ctx.get_var(lhs_node.ident);
-          if (lhs_v && lhs_v.decl && lhs_v.decl.kind == AstNodeKind.VarDecl) {
+          if (lhs_v && lhs_v.decl && lhs_v.decl.kind == ParserNodeKind.VarDecl) {
             if (lhs_v.decl.type.general == 'number') {
               lhs_v.decl.type.name = get_type_name(rhs_t);
               lhs_v.decl.type.general = null;
             }
           }
         }
-        if (lhs_t.kind != 'enum' && rhs_node.kind == AstNodeKind.Identifier) {
+        if (lhs_t.kind != 'enum' && rhs_node.kind == ParserNodeKind.Identifier) {
           const rhs_v = ctx.get_var(rhs_node.ident);
-          if (rhs_v && rhs_v.decl && rhs_v.decl.kind == AstNodeKind.VarDecl) {
+          if (rhs_v && rhs_v.decl && rhs_v.decl.kind == ParserNodeKind.VarDecl) {
             if (rhs_v.decl.type.general == 'number') {
               rhs_v.decl.type.name = get_type_name(lhs_t);
               rhs_v.decl.type.general = null;
@@ -1211,7 +1212,7 @@ export function get_type(
       }
     } break;
 
-    case AstNodeKind.Keyword: {
+    case ParserNodeKind.Keyword: {
       if (parsed_node.word !== 'return') break;
 
       if (parsed_node.expr == null) return Result.Ok(T.void);
@@ -1225,7 +1226,7 @@ export function get_type(
       typed_node = ret_t;
     } break;
 
-    case AstNodeKind.Identifier: {
+    case ParserNodeKind.Identifier: {
       const name = parsed_node.ident;
       const usr_var = ctx.get_var(name);
       if (!usr_var) {
@@ -1244,7 +1245,7 @@ export function get_type(
       typed_node = usr_var.type;
     } break;
 
-    case AstNodeKind.Grouped: {
+    case ParserNodeKind.Grouped: {
       if (!parsed_node.item) return Result.Ok(T.void);
       const result = get_type(ctx, parsed_node.item);
       if (!result.ok) return Result.Err(result.error);
@@ -1367,15 +1368,15 @@ function register_variable(ctx: TypesContext, parsed_node: VarDeclNode): Result<
 }
 
 
-function find_returns(ctx: TypesContext, body: SimpNode[], found: Array<KeywordNode> = []): Result<typeof found, string> {
+function find_returns(ctx: TypesContext, body: SimpParserNode[], found: Array<KeywordNode> = []): Result<typeof found, string> {
   for (const n of body) {
-    if (n.kind == AstNodeKind.VarDecl) {
+    if (n.kind == ParserNodeKind.VarDecl) {
       const result = register_variable(ctx, n);
       if (!result.ok) return result;
       continue;
     }
 
-    if (n.kind == AstNodeKind.IfElse) {
+    if (n.kind == ParserNodeKind.IfElse) {
       const result = find_returns(ctx.new_child_ctx(), n.if_body, found);
       if (!result.ok) return result;
       if (n.else_body) {
@@ -1384,7 +1385,7 @@ function find_returns(ctx: TypesContext, body: SimpNode[], found: Array<KeywordN
       }
       continue;
     }
-    if (n.kind == AstNodeKind.Keyword && n.word == 'return') {
+    if (n.kind == ParserNodeKind.Keyword && n.word == 'return') {
       found.push(n);
       continue;
     }
@@ -1396,9 +1397,9 @@ function find_returns(ctx: TypesContext, body: SimpNode[], found: Array<KeywordN
 // Return whether the types are ok and print type errors if any
 export function check_types(
   ctx: TypesContext,
-  node: Exclude<AstNode, EoFNode> | null | undefined,
-  parent: SimpNode | null = null,
-): node is (Exclude<AstNode, EoFNode> & { typing: LangType }) | null | undefined {
+  node: Exclude<ParserNode, EoFNode> | null | undefined,
+  parent: SimpParserNode | null = null,
+): node is (Exclude<ParserNode, EoFNode> & { typing: LangType }) | null | undefined {
   if (!node) return true;
   // console.log('[DEBUG] Type checking node', node.kind);
   const Ref: { value: LangType } = {} as any;
@@ -1407,11 +1408,11 @@ export function check_types(
   });
 
   switch (node.kind) {
-    case AstNodeKind.Literal:
+    case ParserNodeKind.Literal:
       Ref.value = get_type(ctx, node).unwrap();
       return true;
 
-    case AstNodeKind.VarDecl: {
+    case ParserNodeKind.VarDecl: {
       if (ctx.has_var(node.name)) {
         const v = ctx.get_var(node.name)!;
         if (v.loc?.line !== node.pos.line || v.loc?.column !== node.pos.column) {
@@ -1514,7 +1515,7 @@ export function check_types(
       }
     };
 
-    case AstNodeKind.Keyword: {
+    case ParserNodeKind.Keyword: {
       const fn = (parent as FnDeclNode);
       const returns_result = parse_type_from_str(ctx, fn.returns);
       if (!returns_result.ok) unreachable('Parsing function return should be safe: ' + String(returns_result.error));
@@ -1544,7 +1545,7 @@ export function check_types(
       return true;
     };
 
-    case AstNodeKind.IfElse: {
+    case ParserNodeKind.IfElse: {
       const cond_t_result = get_type(ctx, node.cond);
       if (!cond_t_result.ok) {
         eprintln(ctx.input_path, node.cond.pos, cond_t_result.error ?? 'Failed to evaluate type of if condition');
@@ -1566,7 +1567,7 @@ export function check_types(
       return true;
     };
 
-    case AstNodeKind.PipeOperatorHead: {
+    case ParserNodeKind.PipeOperatorHead: {
       let prv_result = get_type(ctx, node.val);
       if (!prv_result.ok) {
         eprintln(ctx.input_path, node.pos, prv_result.error ?? 'Failed to assume type of ' + node_debug_fmt(node.val));
@@ -1579,7 +1580,7 @@ export function check_types(
         piper = piper.next;
         const prv = held;
 
-        if (pipe.val.kind == AstNodeKind.FuncCall) {
+        if (pipe.val.kind == ParserNodeKind.FuncCall) {
           const call_node = pipe.val;
           const fn_var = ctx.get_var(pipe.val.name);
           if (!fn_var) {
@@ -1723,7 +1724,7 @@ export function check_types(
       return true;
     };
 
-    case AstNodeKind.FuncCall: {
+    case ParserNodeKind.FuncCall: {
       const fn = ctx.get_var(node.name);
       if (!fn) {
         const { line, column } = node.pos;
@@ -1788,7 +1789,7 @@ export function check_types(
       return true;
     };
 
-    case AstNodeKind.FuncDecl: {
+    case ParserNodeKind.FuncDecl: {
       const fn_type_result = get_type(ctx, node) as Result<FuncType, string>;
       if (!fn_type_result.ok) {
         console.error(fn_type_result.error);
@@ -1817,7 +1818,7 @@ export function check_types(
       const { fn_ctx } = decl_result.value;
 
       for (const n of node.body) {
-        if (n.kind == AstNodeKind.VarDecl) {
+        if (n.kind == ParserNodeKind.VarDecl) {
           // console.log('[DEBUG] Type checking node', node.kind);
           const tr = get_type(fn_ctx, n);
           if (!tr.ok) {
@@ -1840,9 +1841,9 @@ export function check_types(
   return false;
 }
 
-export function register_global(ctx: TypesContext, node: SimpNode): Result<boolean, [string, ...string[]]> {
+export function register_global(ctx: TypesContext, node: SimpParserNode): Result<boolean, [string, ...string[]]> {
   switch (node.kind) {
-    case AstNodeKind.FuncDecl: {
+    case ParserNodeKind.FuncDecl: {
       const builder = fn_type_builder()
         .set_name(node.name)
         .originates({
@@ -1892,7 +1893,7 @@ export function register_global(ctx: TypesContext, node: SimpNode): Result<boole
       }
       const returns = returns_result.value;
 
-      if (returns.length > 0 && returns.every(r => r.expr && r.expr.kind == AstNodeKind.FuncCall && r.expr.name == node.name)) {
+      if (returns.length > 0 && returns.every(r => r.expr && r.expr.kind == ParserNodeKind.FuncCall && r.expr.name == node.name)) {
         const { line, column } = node.pos;
         return Result.Err([
           `${ctx.input_path}:${line}:${column}: Cannot infer return type of an infinitely recursive function`
@@ -1907,13 +1908,13 @@ export function register_global(ctx: TypesContext, node: SimpNode): Result<boole
 
         const expr = ret_node.expr;
 
-        if (expr.kind == AstNodeKind.Literal) {
+        if (expr.kind == ParserNodeKind.Literal) {
           const t = get_type(fn_ctx, expr).unwrap();
           builder.set_return(t);
           break;
         }
 
-        if (expr.kind == AstNodeKind.FuncCall) {
+        if (expr.kind == ParserNodeKind.FuncCall) {
           if (!fn_ctx.var_exists(expr.name)) {
             if (expr.name === node.name) continue;
             const { line, column } = expr.pos;
@@ -1956,7 +1957,7 @@ export function register_global(ctx: TypesContext, node: SimpNode): Result<boole
       return Result.Ok(true);
     };
 
-    case AstNodeKind.VarDecl: {
+    case ParserNodeKind.VarDecl: {
       const result = register_variable(ctx, node);
       if (!result.ok) return Result.Err([result.error]);
       return Result.Ok(true);
