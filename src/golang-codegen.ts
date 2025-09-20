@@ -1,10 +1,10 @@
 import {
   type ParserNode,
   ParserNodeKind,
+  parser_node_debug_fmt,
 } from './tags';
 import {
   pipe_node_to_fn_call_node,
-  node_debug_fmt,
 } from './parser';
 
 import type {
@@ -149,7 +149,7 @@ class GoCodegen implements TargetCodeGen {
         continue;
       }
 
-      log.error(node.pos, `Unsupported code emission for top level node: ${node_debug_fmt(node)}`);
+      log.error(node.pos, `Unsupported code emission for top level node: ${parser_node_debug_fmt(node)}`);
       return true;
     }
 

@@ -9,9 +9,9 @@ import {
   ParserNodeKind,
 
   binop_checker,
+  parser_node_debug_fmt,
 } from './tags';
 import { Lex } from './lexer';
-import { node_debug_fmt } from './parser';
 
 type EoFNode = ParserNodesMap['EOF'];
 type FnDArgNode = ParserNodesMap['FuncArgDecl'];
@@ -1257,7 +1257,7 @@ export function get_type(
     };
   }
 
-  if (!typed_node) return Result.Err('Unable to figure out type for node ' + node_debug_fmt(parsed_node));
+  if (!typed_node) return Result.Err('Unable to figure out type for node ' + parser_node_debug_fmt(parsed_node));
 
   return Result.Ok(typed_node);
 }
@@ -1570,7 +1570,7 @@ export function check_types(
     case ParserNodeKind.PipeOperatorHead: {
       let prv_result = get_type(ctx, node.val);
       if (!prv_result.ok) {
-        eprintln(ctx.input_path, node.pos, prv_result.error ?? 'Failed to assume type of ' + node_debug_fmt(node.val));
+        eprintln(ctx.input_path, node.pos, prv_result.error ?? 'Failed to assume type of ' + parser_node_debug_fmt(node.val));
         return false;
       }
       let held = { T: prv_result.value, pos: node.val.pos };
@@ -1614,7 +1614,7 @@ export function check_types(
                 const call_arg = call_node.args[i]!;
                 const carg_result = get_type(ctx, call_arg);
                 if (!carg_result.ok) {
-                  eprintln(ctx.input_path, call_arg.pos, carg_result.error ?? ('Failed to assume type of ' + node_debug_fmt(call_arg)));
+                  eprintln(ctx.input_path, call_arg.pos, carg_result.error ?? ('Failed to assume type of ' + parser_node_debug_fmt(call_arg)));
                   failed = true;
                   continue;
                 }
@@ -1651,7 +1651,7 @@ export function check_types(
             const call_arg = call_node.args[i]!;
             const carg_result = get_type(ctx, call_arg);
             if (!carg_result.ok) {
-              eprintln(ctx.input_path, call_arg.pos, carg_result.error ?? ('Failed to assume type of ' + node_debug_fmt(call_arg)));
+              eprintln(ctx.input_path, call_arg.pos, carg_result.error ?? ('Failed to assume type of ' + parser_node_debug_fmt(call_arg)));
               failed = true;
               continue;
             }
@@ -1837,7 +1837,7 @@ export function check_types(
     };
   }
 
-  console.error('TypeChecker::check_types has no support for node ' + node_debug_fmt(node));
+  console.error('TypeChecker::check_types has no support for node ' + parser_node_debug_fmt(node));
   return false;
 }
 

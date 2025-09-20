@@ -10,13 +10,15 @@ import {
   type BinopOperator,
   BinopOperators,
   ParserNodeKind,
-  binop_checker,
 
   Keyword,
+
+  binop_checker,
+  parser_node_debug_fmt,
 } from './tags';
 import type { Lexer } from './lexer';
 import type { CursorPosition } from './utils';
-import { create_parser_logger, get_current_line, compiler_logger, pipe, } from './utils';
+import { create_parser_logger, get_current_line, compiler_logger, } from './utils';
 
 type SymToken = LexerTokensMap['Symbol'];
 type FnDeclNode = ParserNodesMap['FuncDecl'];
@@ -39,6 +41,7 @@ const binops_precedence = [
   ['*', '/', '%'],
 ] as const satisfies Array<BinopOperator[]>;
 const get_binop_precedence = (op: BinopOperator): number => binops_precedence.findIndex((opset: BinopOperator[]) => opset.includes(op));
+const ALL_BINOPS = Object.freeze(Object.values(BinopOperators).reduce((acc, val) => acc.concat(val), [] as Array<BinopOperator>));
 
 class SimpParser {
   logger: ReturnType<typeof create_parser_logger>;
@@ -479,9 +482,9 @@ class SimpParser {
       return grouped;
     }
 
-    logger.error(tok.pos, 'Parser mishap');
-    compiler_logger.info(get_current_line(), `Parser Mishap: Unhandled token kind ${tok.kind}`);
-    console.log('stacktrace', (new Error()).stack);
+    const stacktrace = (new Error()).stack; logger.error(tok.pos, 'Parser mishap');
+    compiler_logger.error(get_current_line(), `Parser Mishap: Unhandled token kind ${tok.kind}`);
+    console.log('stacktrace', stacktrace);
     return null;
   }
 
@@ -518,8 +521,9 @@ class SimpParser {
       }
       tok = result.value;
     }
+
     if (tok.kind == TokenKind.EOF) {
-      logger.error(ident.pos, 'Unexpectede end of file while parsing function call');
+      logger.error(ident.pos, 'Unexpected end of file while parsing function call');
       return null;
     }
 
@@ -538,7 +542,7 @@ class SimpParser {
       expect_symbol_next,
     } = this;
 
-    if (expect_symbol_next(...BinopOperators.Math, ...BinopOperators.Comparison, ...BinopOperators.Logical)) {
+    if (expect_symbol_next(...ALL_BINOPS)) {
       compiler_logger.error(get_current_line(), 'Attempting to parse binop but no binop symbol in lexer');
       return null;
     }
@@ -894,7 +898,7 @@ export function pipe_node_to_fn_call_node(head: PipeOpHeadNode) {
       continue;
     }
 
-    compiler_logger.info(get_current_line(), 'Unhandled node val kind', node_debug_fmt(val));
+    compiler_logger.info(get_current_line(), 'Unhandled node val kind', parser_node_debug_fmt(val));
     return null;
   }
 
@@ -913,74 +917,4 @@ export function* pipe_node_it(head: PipeOpHeadNode) {
 export const Parse = (file_path: string, l: Lexer) => new SimpParser(file_path, l);
 export type Parser = ReturnType<typeof Parse>;
 
-
-
-// Passing through function calls just cause I was doing string interpolation with ``
-// but I just like seeing the ts errors on fn calls better
-export function node_debug_fmt(node: ParserNode | undefined | null): string {
-  if (!node) return `NULL`;
-
-  switch (node.kind) {
-    case ParserNodeKind.EOF: return 'EoF{}';
-
-    case ParserNodeKind.Literal: return pipe(
-      node.value,
-      JSON.stringify,
-      val => `Literal{${val}, ${node.type}}`,
-    );
-
-    case ParserNodeKind.Keyword: return pipe(
-      [node.word, node.expr ? node_debug_fmt(node.expr) : 'void'] as const,
-      ([word, expr]) => `Keyword{${word}, (${expr})}`,
-    );
-
-    case ParserNodeKind.Identifier: return pipe(
-      node.ident,
-      ident => `Ident{${ident}}`
-    );
-
-    case ParserNodeKind.FuncDecl: return pipe(
-      [node.name, node.returns, node.args.map(node_debug_fmt).join(', '), node.body.map(node_debug_fmt).join(', ')] as const,
-      ([name, ret, args, body]) => `FnDecl{${name}, Return(${ret}), Args{${args}}, Body{${body}}}`,
-    );
-
-    case ParserNodeKind.VarDecl: return pipe(
-      node.init ? node_debug_fmt(node.init) : '',
-      init => [node.name, init] as const,
-      ([name, init]) => `VarDecl{${name}, Init(${init})}`,
-    );
-
-    case ParserNodeKind.FuncCall: return pipe(
-      [node.name, node.args.map(node_debug_fmt).join(', ')] as const,
-      ([name, args]) => `FnCall{'${name}', Args(${args})}`,
-    );
-
-    case ParserNodeKind.Binop: return pipe(
-      [node_debug_fmt(node.lhs), node.op, node_debug_fmt(node.rhs)] as const,
-      ([lhs, op, rhs]) => `BinOp{'${op}', ${lhs}, ${rhs}}`,
-    );
-
-    case ParserNodeKind.Grouped: return pipe(
-      node.item,
-      node_debug_fmt,
-      a => `Grouped{${a}}`
-    );
-
-    case ParserNodeKind.PipeOperatorHead: return pipe(
-      node.val,
-      node_debug_fmt,
-      val => [val, node_debug_fmt(node.next)] as const,
-      ([from, to]) => to == 'NULL' ? `${from}` : `Pipe{${from} |> ${to}}`,
-    );
-
-    case ParserNodeKind.PipeOperatorTail: return pipe(
-      node.val,
-      node_debug_fmt,
-      val => node.next == null ? [val, null] as const : [val, node_debug_fmt(node.next)] as const,
-      ([from, to]) => to ? `${from} |> ${to}` : from,
-    );
-
-    default: return `${node.kind}{..}`;
-  }
-}
 

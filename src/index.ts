@@ -1,11 +1,13 @@
 import { readdir, mkdir } from 'node:fs/promises';
 
 import { Lex } from "./lexer";
-import { node_debug_fmt, Parse } from './parser';
+import { Parse } from './parser';
 import {
   ParserNodeKind,
   type ParserNode as AstNode,
   type SimpParserNode as SimpNode,
+
+  parser_node_debug_fmt,
 } from './tags';
 import { compiler_logger, get_current_line, type TargetCodeGen } from "./utils";
 import { check_types, create_global_context, get_type_name, register_global } from './typechecker';
@@ -215,7 +217,7 @@ for (const n of program) {
 if (opt.emit_ir) {
   let buf = '';
   for (const node of program) {
-    const str = node_debug_fmt(node);
+    const str = parser_node_debug_fmt(node);
     buf += str + '\n';
   }
   console.log(buf);
