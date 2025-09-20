@@ -651,7 +651,7 @@ function get_func_body_and_args_types(
 }
 
 function parse_type_from_str(ctx: TypesContext, str: string): Result<LangType, string> {
-  const l = Lex(str);
+  const l = Lex(ctx.input_path, str);
   let tok = l.next().unwrap();
   if (tok.kind !== LexerTokenKind.Ident) return Result.Err('Provided type has an invalid name.');
 

@@ -154,7 +154,7 @@ if (!await file.exists()) {
 }
 
 const content = await file.text();
-const lexer = Lex(content);
+const lexer = Lex(input_path, content);
 const parser = Parse(input_path, lexer);
 
 let node: AstNode | null = null;

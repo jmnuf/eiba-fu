@@ -1,6 +1,6 @@
 import type { LexerToken } from './tags';
 import { LexerTokenKind, is_keyword } from './tags';
-import type { CursorPosition } from './utils';
+import type { SourcePosition } from './utils';
 import { Result } from './utils';
 
 
@@ -31,10 +31,12 @@ class SimpLexer {
   private line: number;
   private column: number;
   private buf: string;
+  private src: string;
   #tok: LexerToken;
 
-  constructor(buf: string) {
-    this.buf = buf;
+  constructor(source_name: string, buffer: string) {
+    this.src = source_name;
+    this.buf = buffer;
     this.cursor = -1;
     this.column = 0;
     this.line = 1;
@@ -333,12 +335,12 @@ class SimpLexer {
     return this.#tok.ident;
   }
 
-  get_pos(): CursorPosition {
-    return { line: this.line, column: this.column };
+  get_pos(): SourcePosition {
+    return { file: this.src, line: this.line, column: this.column };
   }
 
   clone() {
-    const copy = new SimpLexer(this.buf);
+    const copy = new SimpLexer(this.src, this.buf);
     copy.cursor = this.cursor;
     copy.line = this.line;
     copy.column = this.column;
@@ -346,6 +348,6 @@ class SimpLexer {
   }
 }
 
-export const Lex = (contents: string) => new SimpLexer(contents);
+export const Lex = (source_name: string, contents: string) => new SimpLexer(source_name, contents);
 export type Lexer = ReturnType<typeof Lex>;
 
