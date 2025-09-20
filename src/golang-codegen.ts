@@ -33,7 +33,9 @@ function replace_print_calls(n: AstNode | null | undefined): boolean {
       const rhs = replace_print_calls(n.rhs);
       return lhs || rhs;
     }
-    case AstNodeKind.PipeOperator: {
+
+    case AstNodeKind.PipeOperatorHead:
+    case AstNodeKind.PipeOperatorTail: {
       const start = replace_print_calls(n.val);
       const next = replace_print_calls(n.next);
       return start || next;
@@ -334,10 +336,14 @@ class GoCodegen implements TargetCodeGen {
         return `${indent}if (${cond}) {\n${body.join('\n')}\n${indent}} else {\n${othw.join('\n')}\n${indent}}`;
       }
 
-      case AstNodeKind.PipeOperator: {
+      case AstNodeKind.PipeOperatorHead: {
         const fncall = pipe_node_to_fn_call_node(node);
         if (!fncall) return new Error('Failed to produce function call sequence from pipe operator chain');
         return node_to_code(fncall, indent_lvl);
+      }
+
+      case AstNodeKind.PipeOperatorTail: {
+        return new Error('PipeOperatorTailNode should not be reached in codegen. Inside compiler error');
       }
 
       case AstNodeKind.Grouped: return pipe(

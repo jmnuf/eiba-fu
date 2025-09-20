@@ -123,7 +123,7 @@ class JavascriptCodegen implements TargetCodeGen {
         );
       } break;
 
-      case AstNodeKind.PipeOperator: {
+      case AstNodeKind.PipeOperatorHead: {
         const res = pipe(
           node,
           pipe_node_to_fn_call_node,

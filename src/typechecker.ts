@@ -1084,8 +1084,8 @@ export function get_type(
       }
     } break;
 
-    case AstNodeKind.PipeOperator: {
-      let pipe = parsed_node;
+    case AstNodeKind.PipeOperatorHead: {
+      let pipe = parsed_node.next;
       // TODO: Check types of sequence instead of just finding the last item and returning its type
       while (pipe.next) {
         pipe = pipe.next;
@@ -1562,14 +1562,14 @@ export function check_types(
       return true;
     };
 
-    case AstNodeKind.PipeOperator: {
+    case AstNodeKind.PipeOperatorHead: {
       let prv_result = get_type(ctx, node.val);
       if (!prv_result.ok) {
         eprintln(ctx.input_path, node.pos, prv_result.error ?? 'Failed to assume type of ' + node_debug_fmt(node.val));
         return false;
       }
       let held = { T: prv_result.value, pos: node.val.pos };
-      let piper = node.next;
+      let piper = node.next as typeof node.next | null;
       while (piper) {
         const pipe = piper;
         piper = piper.next;
