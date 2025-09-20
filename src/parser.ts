@@ -11,11 +11,12 @@ import {
   BinopOperators,
   ParserNodeKind,
   binop_checker,
+
+  Keyword,
 } from './tags';
 import type { Lexer } from './lexer';
 import type { CursorPosition } from './utils';
 import { create_parser_logger, get_current_line, compiler_logger, pipe, } from './utils';
-import { Keywords } from './lexer';
 
 type SymToken = LexerTokensMap['Symbol'];
 type FnDeclNode = ParserNodesMap['FuncDecl'];
@@ -63,12 +64,12 @@ class SimpParser {
 
     switch (tok.kind) {
       case TokenKind.Keyword: {
-        if (tok.word == Keywords.If) {
+        if (tok.word == Keyword.If) {
           lexer.next();
           return parse_if_else(tok.pos);
         }
 
-        if (tok.word == Keywords.Var) {
+        if (tok.word == Keyword.Let) {
           lexer.next();
           if (expect_ident()) {
             logger.info(tok.pos, 'When declaring a variable a name must be given to it');
@@ -145,7 +146,7 @@ class SimpParser {
           };
         }
 
-        if (tok.word === Keywords.Ret) {
+        if (tok.word === Keyword.Return) {
           lexer.next();
           const peeked = lexer.peek();
           if (!peeked) return null;
@@ -168,7 +169,7 @@ class SimpParser {
           };
         }
 
-        if (tok.word == Keywords.Func) {
+        if (tok.word == Keyword.Fn || tok.word == Keyword.Function) {
           lexer.next();
           const func = this.parse_func();
           if (!func) return null;
@@ -364,7 +365,7 @@ class SimpParser {
     }
 
     if (tok.kind == TokenKind.Ident) {
-      if (tok.ident == Keywords.Func) {
+      if (tok.ident == Keyword.Fn || tok.ident == Keyword.Function) {
         return parse_func();
       }
 
