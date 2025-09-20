@@ -6,9 +6,11 @@ import {
   type SimpParserNode as SimpNode,
   ParserNodeKind as AstNodeKind,
   type ParserNodesMap,
+
+  binop_checker,
 } from './tags';
 import { Lex } from './lexer';
-import { is_cmp_operator, is_logic_operator, is_math_operator, node_debug_fmt } from './parser';
+import { node_debug_fmt } from './parser';
 
 type EoFNode = ParserNodesMap['EOF'];
 type FnDArgNode = ParserNodesMap['FuncArgDecl'];
@@ -1090,7 +1092,8 @@ export function get_type(
       while (pipe.next) {
         pipe = pipe.next;
       }
-      switch (pipe.val.kind) {
+      const val_kind = pipe.val.kind;
+      switch (val_kind) {
         case AstNodeKind.FuncCall: {
           const t_result = get_type(ctx, pipe.val);
           if (!t_result.ok) return Result.Err(`Failed to read type\n${t_result.error}`);
@@ -1099,17 +1102,18 @@ export function get_type(
           break;
         }
         case AstNodeKind.Identifier:
-        case AstNodeKind.Grouped:
-        case AstNodeKind.Literal: {
-          const t_result = get_type(ctx, pipe.val);
-          if (!t_result.ok) return Result.Err(`Failed to read type: ${t_result.error}`);
-          const t = t_result.value;
+          // case AstNodeKind.Grouped:
+          // case AstNodeKind.Literal:
+          {
+            const t_result = get_type(ctx, pipe.val);
+            if (!t_result.ok) return Result.Err(`Failed to read type: ${t_result.error}`);
+            const t = t_result.value;
 
-          if (t.kind == 'func') return Result.Ok(t.returns);
-          typed_node = t;
-        } break;
+            if (t.kind == 'func') return Result.Ok(t.returns);
+            typed_node = t;
+          } break;
         default: {
-          $todo('Handle pipe expression type', pipe.val.kind);
+          $todo('Handle pipe expression type', val_kind);
         }
       }
     } break;
@@ -1130,7 +1134,7 @@ export function get_type(
       }
       const rhs_t = rhs_t_result.value;
 
-      if (is_math_operator(op)) {
+      if (binop_checker.is_math_operator(op)) {
         if (!is_number(lhs_t)) {
           return Result.Err('Left side of math operation is not a number but has type `' + get_type_name(lhs_t) + '`');
         }
@@ -1160,7 +1164,7 @@ export function get_type(
         return Result.Ok(typed_node);
       }
 
-      if (is_logic_operator(op)) {
+      if (binop_checker.is_logical_operator(op)) {
         if (!types_are_equivalent(lhs_t, T.bool)) {
           return Result.Err('Left side of logical operator is not of type `bool` but has type `' + get_type_name(lhs_t) + '`');
         }
@@ -1170,7 +1174,7 @@ export function get_type(
         return Result.Ok(T.bool);
       }
 
-      if (is_cmp_operator(op)) {
+      if (binop_checker.is_comparison_operator(op)) {
         if (!is_number(lhs_t)) {
           const lhs_name = get_type_name(lhs_t);
           return Result.Err('Left side of comparison operator must be a number, but it has type `' + lhs_name + '`');
