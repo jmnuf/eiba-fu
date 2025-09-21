@@ -2,7 +2,7 @@ import {
   type ParserNode,
   ParserNodeKind,
   parser_node_debug_fmt,
-} from './tags';
+} from './token-node-defintions';
 import {
   pipe_node_to_fn_call_node,
 } from './parser';

@@ -1,5 +1,5 @@
-import type { LexerToken } from './tags';
-import { LexerTokenKind, is_keyword } from './tags';
+import type { LexerToken } from './token-node-defintions';
+import { LexerTokenKind, is_keyword } from './token-node-defintions';
 import type { SourcePosition } from './utils';
 import { Result } from './utils';
 

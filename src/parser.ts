@@ -1,4 +1,4 @@
-import type { LexerTokensMap } from './tags';
+import type { LexerTokensMap } from './token-node-defintions';
 import {
   LexerTokenKind,
   LexerTokenKind as TokenKind,
@@ -15,7 +15,7 @@ import {
 
   binop_checker,
   parser_node_debug_fmt,
-} from './tags';
+} from './token-node-defintions';
 import type { Lexer } from './lexer';
 import type { CursorPosition } from './utils';
 import { create_parser_logger, get_current_line, compiler_logger, } from './utils';

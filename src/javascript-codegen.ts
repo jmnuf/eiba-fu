@@ -1,7 +1,7 @@
 import {
   type ParserNode,
   ParserNodeKind,
-} from './tags';
+} from './token-node-defintions';
 import { pipe_node_to_fn_call_node } from './parser';
 import {
   ensure_valid_output_path_from_input_path,

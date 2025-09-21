@@ -4,7 +4,7 @@ import getCurrentLine from 'get-current-line';
 import type {
   ParserNode as AstNode,
   ParserNodesMap,
-} from './tags';
+} from './token-node-defintions';
 import type { Parser } from './parser';
 
 type VarDeclNode = ParserNodesMap['VarDecl'];

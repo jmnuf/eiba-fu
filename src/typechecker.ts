@@ -10,7 +10,7 @@ import {
 
   binop_checker,
   parser_node_debug_fmt,
-} from './tags';
+} from './token-node-defintions';
 import { Lex } from './lexer';
 
 type EoFNode = ParserNodesMap['EOF'];

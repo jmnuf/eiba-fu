@@ -8,7 +8,7 @@ import {
   type SimpParserNode as SimpNode,
 
   parser_node_debug_fmt,
-} from './tags';
+} from './token-node-defintions';
 import { compiler_logger, get_current_line, type TargetCodeGen } from "./utils";
 import { check_types, create_global_context, get_type_name, register_global } from './typechecker';
 
