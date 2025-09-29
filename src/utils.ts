@@ -13,11 +13,25 @@ type FnDeclNode = ParserNodesMap['FuncDecl'];
 export type Prettify<T> = { [K in keyof T]: T[K] } & unknown;
 
 export type Result<T, E> = { ok: true; value: T; unwrap(): T; } | { ok: false; error: E; unwrap(): never; };
+export type AsyncResult<T, E> = Promise<Result<T, E>>;
 
 export const Result = Object.freeze({
   Ok: <T, E>(value: T): Result<T, E> => ({ ok: true, value, unwrap() { return value; } }),
   Err: <T, E>(error: E): Result<T, E> => ({ ok: false, error, unwrap() { throw new Error('Unwrapping Result:Error', { cause: error }); } }),
 });
+
+export type Option<T> = { some: true; value: T; unwrap(): T; } | { some: false; unwrap(): never; };
+export const Option = Object.freeze({
+  Some: <T>(value: T): Option<T> => ({ some: true, value, unwrap() { return value; } }),
+  get None() { return { some: false } as Option<any> }
+});
+
+const text_encoder = new TextEncoder();
+const text_decoder = new TextDecoder();
+export const Utf8 = {
+  encode: (str: string) => text_encoder.encode(str),
+  decode: (bytes: number[] | Uint8Array | Uint8ClampedArray) => text_decoder.decode(Uint8ClampedArray.from(bytes))
+} as const;
 
 
 export class TimeoutError extends Error { }
@@ -57,6 +71,9 @@ export const create_parser_logger = (file_path: string) => ({
     console.error(`${file_path}:${pos.line}:${pos.column}: [ERROR]`, ...stuff);
     console.log((new Error()).stack);
   },
+  debug(pos: CursorPosition, ...stuff: any[]) {
+    console.log(`${file_path}:${pos.line}:${pos.column}: [DEBUG]`, ...stuff);
+  },
 });
 
 export type CurrentLinePos = { method: string; file: string; line: number; char: number; };
@@ -74,6 +91,8 @@ export const compiler_logger = {
     console.error(`${pos.file}:${pos.line}:${pos.char}: [ERROR]`, ...stuff);
     console.log((new Error()).stack);
   },
+
+  debug: (pos: CurrentLinePos, ...stuff: any[]) => console.log(`${pos.file}:${pos.line}:${pos.char}: [DEBUG]`, ...stuff),
 };
 
 export interface CodeGen {
