@@ -19,6 +19,28 @@ export const Result = Object.freeze({
   Err: <T, E>(error: E): Result<T, E> => ({ ok: false, error, unwrap() { throw new Error('Unwrapping Result:Error', { cause: error }); } }),
 });
 
+
+export class TimeoutError extends Error { }
+
+export function promise_timeout<T>(promise: Promise<T>, timeout_secs: number) {
+  return new Promise<T>((resolve, reject) => {
+    let is_resolved = false;
+
+    promise.then((value) => {
+      if (is_resolved) return;
+      is_resolved = true;
+      resolve(value);
+    });
+
+    setTimeout((start: number) => {
+      const time = Date.now() - start;
+      is_resolved = true;
+      reject(new TimeoutError(`Promise timed out after ${time}ms`));
+    }, timeout_secs * 1_000, Date.now());
+  });
+}
+
+
 export type LogLevel = 'ERROR' | 'INFO' | 'WARN';
 
 export type CursorPosition = { line: number; column: number; };
