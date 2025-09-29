@@ -1,8 +1,6 @@
 
-let target := 15;
-
-fn fizzbuz(n: sisz) -> sisz {
-  if (n > target) return n;
+fn fizzbuz(n: sisz, target: sisz) {
+  if (n > target) return;
 
   let rem3 := n % 3;
   let rem5 := n % 5;
@@ -21,10 +19,10 @@ fn fizzbuz(n: sisz) -> sisz {
 
   printf(`\n');
 
-  return fizzbuz(n + 1);
+  fizzbuz(n + 1, target);
 }
 
 fn main() {
-  fizzbuz(1);
+  fizzbuz(0, 15);
 }
 
