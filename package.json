@@ -7,7 +7,7 @@
     "build": "bun build --compile --outfile=build/eibafuc src/index.ts",
     "check:ir": "bun run ./ir-tests.ts",
     "check:examples": "bun run ./examples.ts",
-    "check": "bun run build && bun run check:ir && bun run check:examples && echo \"✅ All checks passed\""
+    "check": "bun run ./all-checks.ts",
   },
   "devDependencies": {
     "@types/bun": "latest"
