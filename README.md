@@ -7,23 +7,25 @@ You can see the examples presented in the ./examples/ folder to garner a look at
 Here is also an example showcase on how the language looks:
 
 ```efu
-fn fizz(n: isz) -> u8 {
-  if (n % 3 == 0) {
+fn fizz(n: sisz) -> ui8 {
+  let x := n % 3;
+  if (x == 0) {
     printf(`Fizz');
-	return 1;
+    return 1;
   }
   return 0;
 }
-fn buzz(n: isz) -> u8 {
-  if (n % 5 == 0) {
+fn buzz(n: sisz) -> ui8 {
+  let x := n % 5;
+  if (x == 0) {
     printf(`Buzz');
-	return 1;
+    return 1;
   }
   return 0;
 }
-fn fizzbuzz(i: isz, end: isz) {
+fn fizzbuzz(i: sisz, end: sisz) {
   if (i > end) return;
-  let x := fizz(i) + buzz(i);
+  let x :ui8 = fizz(i) + buzz(i);
   if (x == 0) printf(`%v', i);
   printf(`\n');
   fizzbuzz(i + 1, end);
