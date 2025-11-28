@@ -1,9 +1,12 @@
 import {
-  type AstNode,
-  AstNodeKind,
+  type ParserNode,
+  ParserNodeKind,
+  parser_node_debug_fmt,
+} from './token-node-defintions';
+import {
   pipe_node_to_fn_call_node,
-  node_debug_fmt,
 } from './parser';
+
 import type {
   CodeGen,
   TargetCodeGen,
@@ -16,34 +19,36 @@ import { compiler_logger, ensure_valid_output_path_from_input_path, get_current_
 
 const get_indent_from_lvl = (lvl: number) => lvl == 0 ? '' : Array.from({ length: lvl }).map(() => '\t').join('');;
 
-function replace_print_calls(n: AstNode | null | undefined): boolean {
+function replace_print_calls(n: ParserNode | null | undefined): boolean {
   if (!n) return false;
 
   switch (n.kind) {
-    case AstNodeKind.EOF: case 'fndclarg': case 'lit': return false;
-    case AstNodeKind.FuncDecl: return n.body.map(replace_print_calls).some(r => r);
-    case AstNodeKind.VarDecl: return replace_print_calls(n.init);
-    case AstNodeKind.Expr: return replace_print_calls(n.item);
-    case AstNodeKind.Keyword: return replace_print_calls(n.expr);
-    case AstNodeKind.Binop: {
+    case ParserNodeKind.EOF: case ParserNodeKind.FuncArgDecl: case ParserNodeKind.Literal: return false;
+    case ParserNodeKind.FuncDecl: return n.body.map(replace_print_calls).some(r => r);
+    case ParserNodeKind.VarDecl: return replace_print_calls(n.init);
+    case ParserNodeKind.Grouped: return replace_print_calls(n.item);
+    case ParserNodeKind.Keyword: return replace_print_calls(n.expr);
+    case ParserNodeKind.Binop: {
       const lhs = replace_print_calls(n.lhs);
       const rhs = replace_print_calls(n.rhs);
       return lhs || rhs;
     }
-    case AstNodeKind.PipeOp: {
+
+    case ParserNodeKind.PipeOperatorHead:
+    case ParserNodeKind.PipeOperatorTail: {
       const start = replace_print_calls(n.val);
       const next = replace_print_calls(n.next);
       return start || next;
     }
 
-    case AstNodeKind.IfElse: {
+    case ParserNodeKind.IfElse: {
       const cond = replace_print_calls(n.cond);
-      const body = n.body.map(replace_print_calls).some(r => r);
-      const othw = n.else ? n.else.map(replace_print_calls).some(r => r) : false;
+      const body = n.if_body.map(replace_print_calls).some(r => r);
+      const othw = n.else_body ? n.else_body.map(replace_print_calls).some(r => r) : false;
       return cond || body || othw;
     }
 
-    case AstNodeKind.Ident: {
+    case ParserNodeKind.Identifier: {
       if (n.ident == 'printf') {
         n.ident = 'fmt.Printf';
         return true;
@@ -55,7 +60,7 @@ function replace_print_calls(n: AstNode | null | undefined): boolean {
       return false;
     };
 
-    case AstNodeKind.FuncCall: {
+    case ParserNodeKind.FuncCall: {
       const replaced = n.args.map(replace_print_calls).some(r => r);
       if (n.name == 'printf') {
         n.name = 'fmt.Printf';
@@ -67,14 +72,14 @@ function replace_print_calls(n: AstNode | null | undefined): boolean {
         const first_arg = n.args[0];
         if (!first_arg) {
           n.args.push({
-            kind: 'lit',
+            kind: ParserNodeKind.Literal,
             type: 'str',
             value: '\n',
             pos: { line: n.pos.line, column: n.pos.column + 9, },
           });
         } else {
           let added_newline = false;
-          if (first_arg.kind == 'lit') {
+          if (first_arg.kind == ParserNodeKind.Literal) {
             if (first_arg.type == 'str') {
               first_arg.value += '\n';
               added_newline = true;
@@ -84,7 +89,7 @@ function replace_print_calls(n: AstNode | null | undefined): boolean {
           if (!added_newline) {
             const args = n.args;
             n.args = [{
-              kind: 'fncal',
+              kind: ParserNodeKind.FuncCall,
               args, name: 'fmt.Sprintf',
               pos: { ...n.pos },
             }];
@@ -126,14 +131,14 @@ class GoCodegen implements TargetCodeGen {
 
       this.adapt_node_native_type_names(node);
 
-      if (node.kind == 'eof') break;
+      if (node.kind == ParserNodeKind.EOF) break;
 
-      if (node.kind == 'vardcl') {
+      if (node.kind == ParserNodeKind.VarDecl) {
         vars.push(node);
         continue;
       }
 
-      if (node.kind == 'fndcl') {
+      if (node.kind == ParserNodeKind.FuncDecl) {
         funcs.push(node);
 
         // This is just a way of unhandling missing types but the type system is written this should be an error
@@ -144,7 +149,7 @@ class GoCodegen implements TargetCodeGen {
         continue;
       }
 
-      log.error(node.pos, `Unsupported code emission for top level node: ${node_debug_fmt(node)}`);
+      log.error(node.pos, `Unsupported code emission for top level node: ${parser_node_debug_fmt(node)}`);
       return true;
     }
 
@@ -192,44 +197,44 @@ class GoCodegen implements TargetCodeGen {
   }
 
   // TODO: We should recieve the actual typed node produced by the TypeChecker
-  adapt_node_native_type_names(node: AstNode | null) {
+  adapt_node_native_type_names(node: ParserNode | null) {
     if (!node) return;
     const adapt_native_type_name = this.adapt_native_type_name.bind(this);
     const adapt_node_native_type_names = this.adapt_node_native_type_names.bind(this);
 
     switch (node.kind) {
-      case AstNodeKind.EOF: break;
-      case AstNodeKind.FuncDclArg: {
+      case ParserNodeKind.EOF: break;
+      case ParserNodeKind.FuncArgDecl: {
         if (node.type == '()') unreachable('Failed to infer type of argument ' + node.name);
         node.type = adapt_native_type_name(node.type);
       } break;
-      case AstNodeKind.FuncDecl: {
+      case ParserNodeKind.FuncDecl: {
         if (node.returns == '()') unreachable('Failed to infer the return type of function ' + node.name);
         node.returns = adapt_native_type_name(node.returns);
         for (const n of node.args) adapt_node_native_type_names(n);
         for (const n of node.body) adapt_node_native_type_names(n);
       } break;
-      case AstNodeKind.VarDecl: {
+      case ParserNodeKind.VarDecl: {
         if (node.type.name == '()') unreachable('Failed to infer the type of variable ' + node.name);
         node.type.name = adapt_native_type_name(node.type.name);
         adapt_node_native_type_names(node.init);
       } break;
-      case AstNodeKind.IfElse: {
+      case ParserNodeKind.IfElse: {
         adapt_node_native_type_names(node.cond);
-        for (const n of node.body) adapt_node_native_type_names(n);
-        if (node.else) for (const n of node.else) adapt_node_native_type_names(n);
+        for (const n of node.if_body) adapt_node_native_type_names(n);
+        if (node.else_body) for (const n of node.else_body) adapt_node_native_type_names(n);
       } break;
     }
   }
 
-  node_to_code(node: AstNode | null, indent_lvl = 0): string | Error {
+  node_to_code(node: ParserNode | null, indent_lvl = 0): string | Error {
     const indent = get_indent_from_lvl(indent_lvl);
     if (!node) return `${indent}nil`;
     const node_to_code = this.node_to_code.bind(this);
 
     switch (node.kind) {
-      case AstNodeKind.EOF: return '';
-      case AstNodeKind.FuncCall: {
+      case ParserNodeKind.EOF: return '';
+      case ParserNodeKind.FuncCall: {
         const args = [] as string[];
         for (const a of node.args) {
           const code = node_to_code(a);
@@ -239,7 +244,7 @@ class GoCodegen implements TargetCodeGen {
         return indent + `${node.name}(${args.join(', ')})`;
       }
 
-      case AstNodeKind.FuncDecl: {
+      case ParserNodeKind.FuncDecl: {
         const args = [] as string[];
         for (const a of node.args) {
           const ac = node_to_code(a);
@@ -250,7 +255,7 @@ class GoCodegen implements TargetCodeGen {
         const body: string[] = []
         let full_body: string;
         const last_stmt = node.body[node.body.length - 1]!
-        const tailcalling = (last_stmt.kind == 'fncal' && last_stmt.name == node.name && last_stmt.args.length == node.args.length);
+        const tailcalling = (last_stmt.kind == ParserNodeKind.FuncCall && last_stmt.name == node.name && last_stmt.args.length == node.args.length);
 
         if (tailcalling) {
           for (const b of node.body.slice(0, node.body.length - 1)) {
@@ -283,20 +288,20 @@ class GoCodegen implements TargetCodeGen {
         return indent + `func ${node.name}(${args.join(', ')})${ret} {\n${full_body}\n${indent}}`;
       }
 
-      case AstNodeKind.FuncDclArg: return indent + `${node.name} ${node.type}`;
+      case ParserNodeKind.FuncArgDecl: return indent + `${node.name} ${node.type}`;
 
-      case AstNodeKind.Literal: {
+      case ParserNodeKind.Literal: {
         if (node.type == 'int') {
           return indent + node.value.toString(10);
         }
         return indent + JSON.stringify(node.value);
       }
 
-      case AstNodeKind.Binop: return indent + node_to_code(node.lhs) + node.op + node_to_code(node.rhs);
-      case AstNodeKind.Keyword: return indent + node.word + (node.expr ? ' ' + node_to_code(node.expr) : '');
-      case AstNodeKind.Ident: return indent + node.ident;
+      case ParserNodeKind.Binop: return indent + node_to_code(node.lhs) + node.op + node_to_code(node.rhs);
+      case ParserNodeKind.Keyword: return indent + node.word + (node.expr ? ' ' + node_to_code(node.expr) : '');
+      case ParserNodeKind.Identifier: return indent + node.ident;
 
-      case AstNodeKind.VarDecl: {
+      case ParserNodeKind.VarDecl: {
         if (!node.init) return `${indent}var ${node.name} ${node.type.name}`;
         const init = node_to_code(node.init);
         if (typeof init != 'string') return init;
@@ -310,19 +315,19 @@ class GoCodegen implements TargetCodeGen {
         return indent + `var ${node.name} ${type_name} = ${init}`;
       }
 
-      case AstNodeKind.IfElse: {
+      case ParserNodeKind.IfElse: {
         const cond = node_to_code(node.cond);
         const body: string[] = [];
-        for (const n of node.body) {
+        for (const n of node.if_body) {
           const nc = node_to_code(n, indent_lvl + 1);
           if (typeof nc != 'string') return nc;
           body.push(nc);
         }
 
-        if (!node.else) return `${indent}if (${cond}) {\n${body.join('\n')}\n${indent}}`;
+        if (!node.else_body) return `${indent}if (${cond}) {\n${body.join('\n')}\n${indent}}`;
 
         const othw: string[] = [];
-        for (const n of node.else) {
+        for (const n of node.else_body) {
           const nc = node_to_code(n, indent_lvl + 1);
           if (typeof nc != 'string') return nc;
           othw.push(nc);
@@ -331,13 +336,17 @@ class GoCodegen implements TargetCodeGen {
         return `${indent}if (${cond}) {\n${body.join('\n')}\n${indent}} else {\n${othw.join('\n')}\n${indent}}`;
       }
 
-      case AstNodeKind.PipeOp: {
+      case ParserNodeKind.PipeOperatorHead: {
         const fncall = pipe_node_to_fn_call_node(node);
         if (!fncall) return new Error('Failed to produce function call sequence from pipe operator chain');
         return node_to_code(fncall, indent_lvl);
       }
 
-      case AstNodeKind.Expr: return pipe(
+      case ParserNodeKind.PipeOperatorTail: {
+        return new Error('PipeOperatorTailNode should not be reached in codegen. Inside compiler error');
+      }
+
+      case ParserNodeKind.Grouped: return pipe(
         node.item,
         node_to_code,
         expr => typeof expr == 'string' ? (indent + `(${expr})`) : expr,

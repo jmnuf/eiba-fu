@@ -1,6 +1,6 @@
 :i exit_code 1
-:b stdout 100
-FnDecl{main, Return(()), Args{}, Body{iffi{..}, Keyword{return, (Literal{"Hello, World!", str})}}}
+:b stdout 103
+FnDecl{main, Return(()), Args{}, Body{if-else{..}, Keyword{return, (Literal{"Hello, World!", str})}}}
 
 
 :b stderr 87

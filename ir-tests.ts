@@ -1,6 +1,8 @@
 import npath from 'node:path';
 import { readdir } from 'node:fs/promises';
 
+import { promise_timeout, TimeoutError } from './src/utils';
+
 const TESTS_FOLDER_NAME = 'ir-tests';
 const TESTS_FOLDER_PATH = npath.join(__dirname, TESTS_FOLDER_NAME);
 
@@ -35,7 +37,7 @@ type Mismatcher = {
     expected: number;
     received: number;
   };
-  stdout: false | { kind: 'size'; r: number; e: number; } | {
+  stdout: false | { kind: 'size'; r: number; e: number; diff: null | Array<[number, [number[], number[]]]>; } | {
     kind: 'bytes';
     diff: Array<[number, [number[], number[]]]>;
   };
@@ -93,6 +95,7 @@ async function main(argv: string[]): Promise<number> {
   let quiet = false;
   let force_rebuild = false;
   const requested_tests: string[] = [];
+
   while (argv.length) {
     const arg = argv.shift()!;
     if (arg == '-rec') {
@@ -174,11 +177,28 @@ async function main(argv: string[]): Promise<number> {
   let output_buffer = '';
   let exit_code = 0;
   for (const [test_name, file_path] of source_paths) {
-    let output;
-    if (quiet) {
-      output = await log.cmd`${compiler_path} -debug-ir -o ${TESTS_FOLDER_PATH + '/'} ${file_path}`.nothrow().quiet();
-    } else {
-      output = await log.cmd`${compiler_path} -debug-ir -o ${TESTS_FOLDER_PATH + '/'} ${file_path}`.nothrow();
+    let output: Bun.$.ShellOutput;
+    const PROMISE_TIMEOUT_SECONDS = 10;
+    try {
+      if (quiet) {
+        // output = await log.cmd`${compiler_path} -debug-ir -o ${TESTS_FOLDER_PATH + '/'} ${file_path}`.nothrow().quiet();
+        output = await promise_timeout(
+          log.cmd`bun run ./src/index.ts -- -debug-ir -o ${TESTS_FOLDER_PATH + '/'} ${file_path}`.nothrow().quiet(),
+          PROMISE_TIMEOUT_SECONDS,
+        );
+      } else {
+        // output = await log.cmd`${compiler_path} -debug-ir -o ${TESTS_FOLDER_PATH + '/'} ${file_path}`.nothrow();
+        output = await promise_timeout(
+          log.cmd`bun run ./src/index.ts -- -debug-ir -o ${TESTS_FOLDER_PATH + '/'} ${file_path}`.nothrow(),
+          PROMISE_TIMEOUT_SECONDS,
+        );
+      }
+    } catch (error) {
+      if (error instanceof TimeoutError) {
+        log.error(`${file_path}: ${error.message}`);
+        return 1;
+      }
+      throw error;
     }
     const result: TestResult = {
       exit_code: output.exitCode,
@@ -253,13 +273,26 @@ function test_check_to_string(test_name: string, test: TestCheckResult): string 
     if (ms.kind == 'size') {
       const { e, r } = ms;
       buf.push(`StdOut is of a different size than expected. Generated size is ${r} but expected ${e}`);
+      if (ms.diff) {
+        let subbuf: string[] = [];
+        for (const [index, [exp, got]] of ms.diff) {
+          const expected_string = JSON.stringify(new TextDecoder().decode(new Uint8Array(exp)));
+          const expected_bytes = '[' + exp.join(', ') + ']';
+          const expected = `${expected_bytes} => ${expected_string}`;
+          const received_string = JSON.stringify(new TextDecoder().decode(new Uint8Array(got)));
+          const received_bytes = '[' + got.join(', ') + ']';
+          const received = `${received_bytes} => ${received_string}`;
+          subbuf.push(`From index ${index}:\n            Expected: ${expected}\n            Received: ${received}`);
+        }
+        buf.push('   ' + subbuf.join('\n        '));
+      }
     } else {
       buf.push('StdOut differs from the expected');
       let subbuf: string[] = [];
       for (const [index, [exp, got]] of ms.diff) {
         subbuf.push(`From index ${index}:\n            Expected: [${exp.join(', ')}]\n            Received: [${got.join(', ')}]`);
       }
-      buf.push(subbuf.join('\n        '));
+      buf.push('   ' + subbuf.join('\n        '));
     }
   }
   if (test.mismatch.stderr !== false) {
@@ -304,6 +337,12 @@ function write_output_snapshot(snapshot_file_name: string, result: TestResult) {
 function calculate_diff_between_bytes(received_bytes: Uint8Array, expected_bytes: Uint8Array) {
   const diff: Array<[number, [number[], number[]]]> = [];
   for (let i = 0; i < expected_bytes.length; ++i) {
+    if (i >= received_bytes.length) {
+      const expected = Array.from(expected_bytes.slice(i));
+      diff.push([i, [expected, []]]);
+      break;
+    }
+
     if (expected_bytes[i] === received_bytes[i]) continue;
     const expected: number[] = [];
     const received: number[] = [];
@@ -311,7 +350,7 @@ function calculate_diff_between_bytes(received_bytes: Uint8Array, expected_bytes
     for (let j = i; j < expected_bytes.length; ni = ++j) {
       const a = expected_bytes[j]!;
       const b = received_bytes[j]!;
-      if (a === b) break;
+      if (a === b && expected_bytes[j + 1] === received_bytes[j + 1]) break;
       expected.push(a);
       received.push(b);
     }
@@ -355,7 +394,17 @@ function check_output_to_snapshot(snapshot_file_name: string, test_result: TestR
         if (field.kind == 'blob') {
           if (field.name == 'stdout') {
             if (field.value.length != test_result.stdout.length) {
-              mismatched.stdout = { kind: 'size', e: field.value.length, r: test_result.stdout.length };
+              const MAX_LEN_DIFF_SIZE = 20;
+              if (Math.abs(field.value.length - test_result.stdout.length) > MAX_LEN_DIFF_SIZE) {
+                mismatched.stdout = { kind: 'size', e: field.value.length, r: test_result.stdout.length, diff: null };
+                continue;
+              }
+              mismatched.stdout = {
+                kind: 'size',
+                e: field.value.length,
+                r: test_result.stdout.length,
+                diff: calculate_diff_between_bytes(test_result.stdout, field.value),
+              };
               continue;
             }
 

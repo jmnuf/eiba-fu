@@ -1,4 +1,8 @@
-import { AstNodeKind, pipe_node_to_fn_call_node, type AstNode } from './parser';
+import {
+  type ParserNode,
+  ParserNodeKind,
+} from './token-node-defintions';
+import { pipe_node_to_fn_call_node } from './parser';
 import {
   ensure_valid_output_path_from_input_path,
   get_current_line,
@@ -27,14 +31,14 @@ class JavascriptCodegen implements TargetCodeGen {
     const funcs = [] as CodeGen['funcs'];
 
     for (const node of nodes) {
-      if (node.kind == AstNodeKind.EOF) break;
+      if (node.kind == ParserNodeKind.EOF) break;
 
-      if (node.kind == AstNodeKind.VarDecl) {
+      if (node.kind == ParserNodeKind.VarDecl) {
         vars.push(node);
         continue;
       }
 
-      if (node.kind == AstNodeKind.FuncDecl) {
+      if (node.kind == ParserNodeKind.FuncDecl) {
         funcs.push(node);
         continue;
       }
@@ -57,17 +61,17 @@ class JavascriptCodegen implements TargetCodeGen {
     return false;
   }
 
-  node_to_code(node: AstNode | null, indent_lvl = 0): string | Error {
+  node_to_code(node: ParserNode | null, indent_lvl = 0): string | Error {
     const indent = get_indent_from_lvl(indent_lvl);
     if (!node) return `${indent}null`;
     const node_to_code = this.node_to_code.bind(this);
 
     let code: string | null = null;
     switch (node.kind) {
-      case AstNodeKind.EOF: code = ''; break;
-      case AstNodeKind.Ident: code = node.ident; break;
-      case AstNodeKind.FuncDclArg: code = node.name; break;
-      case AstNodeKind.Literal: {
+      case ParserNodeKind.EOF: code = ''; break;
+      case ParserNodeKind.Identifier: code = node.ident; break;
+      case ParserNodeKind.FuncArgDecl: code = node.name; break;
+      case ParserNodeKind.Literal: {
         if (node.type == 'int') {
           code = node.value.toString(10);
         } else {
@@ -75,7 +79,7 @@ class JavascriptCodegen implements TargetCodeGen {
         }
       } break;
 
-      case AstNodeKind.Binop: {
+      case ParserNodeKind.Binop: {
         const lhs = node_to_code(node.lhs);
         if (typeof lhs != 'string') return lhs;
         const rhs = node_to_code(node.rhs);
@@ -85,7 +89,7 @@ class JavascriptCodegen implements TargetCodeGen {
         code = `${lhs} ${op} ${rhs}`;
       } break;
 
-      case AstNodeKind.Keyword: {
+      case ParserNodeKind.Keyword: {
         code = node.word;
         if (node.expr) {
           const expr = node_to_code(node.expr);
@@ -94,19 +98,19 @@ class JavascriptCodegen implements TargetCodeGen {
         }
       } break;
 
-      case AstNodeKind.Expr: {
+      case ParserNodeKind.Grouped: {
         const expr = node_to_code(node.item);
         if (typeof expr != 'string') return expr;
         code = !node.item ? '()' : `(${expr})`;
       } break;
 
-      case AstNodeKind.VarDecl: {
+      case ParserNodeKind.VarDecl: {
         const init = node_to_code(node.init);
         if (typeof init != 'string') return init;
         code = `let ${node.name} = ${init}`;
       } break;
 
-      case AstNodeKind.FuncCall: {
+      case ParserNodeKind.FuncCall: {
         const args: string[] = [];
         for (const a of node.args) {
           const ac = node_to_code(a, -1);
@@ -119,7 +123,7 @@ class JavascriptCodegen implements TargetCodeGen {
         );
       } break;
 
-      case AstNodeKind.PipeOp: {
+      case ParserNodeKind.PipeOperatorHead: {
         const res = pipe(
           node,
           pipe_node_to_fn_call_node,
@@ -131,7 +135,7 @@ class JavascriptCodegen implements TargetCodeGen {
         code = res;
       } break;
 
-      case AstNodeKind.FuncDecl: {
+      case ParserNodeKind.FuncDecl: {
         const args = [] as string[];
         for (const a of node.args) {
           const ac = node_to_code(a);
@@ -141,7 +145,7 @@ class JavascriptCodegen implements TargetCodeGen {
         const body = [] as string[];
         let full_body: string;
         const last_stmt = node.body[node.body.length - 1]!
-        const tailcalling = (last_stmt.kind == 'fncal' && last_stmt.name == node.name && last_stmt.args.length == node.args.length);
+        const tailcalling = (last_stmt.kind == ParserNodeKind.FuncCall && last_stmt.name == node.name && last_stmt.args.length == node.args.length);
 
         if (tailcalling) {
           for (const b of node.body.slice(0, node.body.length - 1)) {
@@ -176,9 +180,9 @@ class JavascriptCodegen implements TargetCodeGen {
         );
       } break;
 
-      case AstNodeKind.IfElse: {
+      case ParserNodeKind.IfElse: {
         const if_body: string[] = [];
-        for (const b of node.body) {
+        for (const b of node.if_body) {
           const bc = node_to_code(b, indent_lvl + 1);
           if (typeof bc != 'string') return bc;
           if_body.push(bc);
@@ -186,7 +190,7 @@ class JavascriptCodegen implements TargetCodeGen {
 
         const cond = node_to_code(node.cond);
         if (typeof cond != 'string') return cond;
-        if (!node.else) {
+        if (!node.else_body) {
           code = pipe(
             [cond, if_body.join(';\n')] as const,
             ([cond, body]) => `if (${cond}) {\n${body}\n${indent}}`,
@@ -195,7 +199,7 @@ class JavascriptCodegen implements TargetCodeGen {
         }
 
         const else_body: string[] = [];
-        for (const b of node.else) {
+        for (const b of node.else_body) {
           const bc = node_to_code(b, indent_lvl + 1);
           if (typeof bc != 'string') return bc;
           else_body.push(bc);

@@ -1,173 +1,47 @@
-import type { Lexer, SymToken } from './lexer';
+import type { LexerTokensMap } from './token-node-defintions';
+import {
+  LexerTokenKind,
+  LexerTokenKind as TokenKind,
+
+  type ParserNodesMap,
+  type ParserNode,
+  type BinopItemParserNode,
+  type ExprParserNode,
+  type BinopOperator,
+  BinopOperators,
+  ParserNodeKind,
+
+  Keyword,
+
+  binop_checker,
+  parser_node_debug_fmt,
+} from './token-node-defintions';
+import type { Lexer } from './lexer';
 import type { CursorPosition } from './utils';
-import { create_parser_logger, get_current_line, compiler_logger, pipe, } from './utils';
-import { TokenKind, Keywords } from './lexer';
+import { create_parser_logger, get_current_line, compiler_logger, } from './utils';
 
-export const AstNodeKind = Object.freeze({
-  EOF: 'eof',
-  FuncDecl: 'fndcl',
-  FuncDclArg: 'fndclarg',
-  FuncCall: 'fncal',
-  VarDecl: 'vardcl',
-  Binop: 'binop',
-  PipeOp: 'pop',
-  Expr: 'expr',
-  Keyword: 'kword',
-  IfElse: 'iffi',
-  Ident: 'idnt',
-  Literal: 'lit',
-} as const);
-type AstNodeKindsMap = (typeof AstNodeKind);
-type AstNodeKind = AstNodeKindsMap[keyof AstNodeKindsMap];
+type SymToken = LexerTokensMap['Symbol'];
+type FnDeclNode = ParserNodesMap['FuncDecl'];
+type FnDArgNode = ParserNodesMap['FuncArgDecl'];
+type VarDeclNode = ParserNodesMap['VarDecl'];
+type LiteralNode = ParserNodesMap['Literal'];
+type ExprNode = ParserNodesMap['Grouped'];
+type IdentNode = ParserNodesMap['Identifier'];
+type FnCallNode = ParserNodesMap['FuncCall'];
+type BinopNode = ParserNodesMap['Binop'];
+type IfElseNode = ParserNodesMap['IfElse'];
+type PipeOpHeadNode = ParserNodesMap['PipeOperatorHead'];
+type PipeOpTailNode = ParserNodesMap['PipeOperatorTail'];
 
-export interface EoFNode {
-  kind: AstNodeKindsMap['EOF'];
-}
-
-export interface FnDeclNode {
-  kind: AstNodeKindsMap['FuncDecl'];
-  name: string;
-  returns: string;
-  args: FnDArgNode[];
-  body: SimpNode[];
-  pos: CursorPosition;
-}
-
-export interface FnDArgNode {
-  kind: AstNodeKindsMap['FuncDclArg'];
-  name: string;
-  type: string;
-  pos: CursorPosition;
-}
-
-export interface FnCallNode {
-  kind: AstNodeKindsMap['FuncCall'];
-  pos: CursorPosition;
-  name: string;
-  args: SimpNode[];
-}
-
-export interface BinopNode {
-  kind: AstNodeKindsMap['Binop'];
-  pos: CursorPosition;
-  op: BinopOperator;
-  lhs: SimpNode;
-  rhs: SimpNode;
-}
-
-// type PipeChainables = IdentNode | FnCallNode;
-export interface PipeOpNode {
-  kind: AstNodeKindsMap['PipeOp'];
-  pos: CursorPosition;
-  val: Exclude<AstExprNode, PipeOpNode>;
-  next: PipeOpNode | null;
-}
-
-export type LiteralNode = {
-  kind: AstNodeKindsMap['Literal'];
-  pos: CursorPosition;
-  type: 'str';
-  value: string;
-} | {
-  kind: AstNodeKindsMap['Literal'];
-  pos: CursorPosition;
-  type: 'int';
-  value: number;
-}
-
-export interface ExprNode {
-  kind: AstNodeKindsMap['Expr'];
-  pos: CursorPosition;
-  item: AstExprNode | null;
-}
-
-export interface KeywordNode {
-  kind: AstNodeKindsMap['Keyword'];
-  pos: CursorPosition;
-  word: string;
-  expr: AstExprNode | null;
-}
-
-export interface VarDeclNode {
-  kind: AstNodeKindsMap['VarDecl'];
-  pos: CursorPosition;
-  name: string;
-  type: {
-    name: string;
-    general: 'number' | null;
-    infer_pos: (CursorPosition & { file: string; }) | null;
-  };
-  init: AstExprNode | null;
-}
-
-export interface IdentNode {
-  kind: AstNodeKindsMap['Ident'];
-  pos: CursorPosition;
-  ident: string;
-}
-
-export interface IfElseNode {
-  kind: AstNodeKindsMap['IfElse'];
-  pos: CursorPosition;
-  cond: SimpNode;
-  body: SimpNode[];
-  else: null | SimpNode[];
-}
-
-export type AstNode =
-  | EoFNode
-  | FnDeclNode
-  | FnDArgNode
-  | FnCallNode
-  | VarDeclNode
-  | BinopNode
-  | ExprNode
-  | LiteralNode
-  | KeywordNode
-  | IfElseNode
-  | IdentNode
-  | PipeOpNode
-  ;
-
-export type SimpNode = Exclude<AstNode, EoFNode | FnDArgNode>;
-
-export type AstExprNode =
-  | FnDeclNode
-  | FnCallNode
-  | BinopNode
-  | ExprNode
-  | LiteralNode
-  | IdentNode
-  | PipeOpNode
-  ;
-
-export type AstStmtNode = Exclude<AstNode, FnDArgNode | EoFNode>;
-
-export type BinopItemNode = LiteralNode | IdentNode | FnCallNode | BinopNode;
-
-const concat_arr = <const T, const U>(a: readonly T[], b: readonly U[]) => a.concat(b as any) as Array<T | U>;
-const MATH_BINOPS = ['+', '-', '/', '*', '%'] as const;
-export type MathOperator = typeof MATH_BINOPS[number];
-const CMP_BINOPS = ['>', '<', '==', '<=', '>=', '!='] as const;
-export type ComparisonOperator = typeof CMP_BINOPS[number];
-const LOGIC_BINOPS = ['&&', '||'] as const;
-export type LogicalOperator = typeof LOGIC_BINOPS[number];
-const BINOPS = pipe(
-  MATH_BINOPS,
-  arr => concat_arr(arr, CMP_BINOPS),
-  arr => concat_arr(arr, LOGIC_BINOPS),
-);
-export type BinopOperator = typeof BINOPS[number];
-
-const is_binop = (v: string): v is BinopOperator => BINOPS.includes(v as any);
+// Listed from lowest to highest precedence
 const binops_precedence = [
   ['&&', '||'],
-  ['%'],
   ['>', '<', '==', '<=', '>=', '!='],
   ['-', '+'],
-  ['*', '/']
+  ['*', '/', '%'],
 ] as const satisfies Array<BinopOperator[]>;
 const get_binop_precedence = (op: BinopOperator): number => binops_precedence.findIndex((opset: BinopOperator[]) => opset.includes(op));
+const ALL_BINOPS = Object.freeze(Object.values(BinopOperators).reduce((acc, val) => acc.concat(val), [] as Array<BinopOperator>));
 
 class SimpParser {
   logger: ReturnType<typeof create_parser_logger>;
@@ -180,7 +54,7 @@ class SimpParser {
     this.lexer = l;
   }
 
-  parse_statement = (): Exclude<AstNode, FnDArgNode> | null => {
+  parse_statement = (): Exclude<ParserNode, FnDArgNode> | null => {
     const {
       lexer, logger,
       parse_expr,
@@ -189,15 +63,16 @@ class SimpParser {
       expect_symbol_next,
     } = this;
     const tok = lexer.peek();
+    if (!tok) return null;
 
     switch (tok.kind) {
       case TokenKind.Keyword: {
-        if (tok.kword == Keywords.If) {
+        if (tok.word == Keyword.If) {
           lexer.next();
           return parse_if_else(tok.pos);
         }
 
-        if (tok.kword == Keywords.Var) {
+        if (tok.word == Keyword.Let) {
           lexer.next();
           if (expect_ident()) {
             logger.info(tok.pos, 'When declaring a variable a name must be given to it');
@@ -219,6 +94,11 @@ class SimpParser {
 
           if (lexer.get_symbol() == ':') {
             let peek = lexer.peek();
+            if (!peek) {
+              // TODO: Error reporting
+              return null;
+            }
+
             if (peek.kind != TokenKind.Symbol && peek.kind != TokenKind.Ident) {
               logger.error(peek.pos, `Expected either the symbol '=' or a type name but got ${tok.kind}`);
               return null;
@@ -241,7 +121,7 @@ class SimpParser {
               return null;
             }
             init = expr;
-            if (type.name == '()' && expr.kind == AstNodeKind.Literal) {
+            if (type.name == '()' && expr.kind == ParserNodeKind.Literal) {
               if (expr.type == 'str') {
                 type.name = 'string';
               } else if (expr.type == 'int') {
@@ -262,18 +142,19 @@ class SimpParser {
           }
 
           return {
-            kind: AstNodeKind.VarDecl,
+            kind: ParserNodeKind.VarDecl,
             pos: lexer.get_token().pos,
             type,
             name, init,
           };
         }
 
-        if (tok.kword === Keywords.Ret) {
+        if (tok.word === Keyword.Return) {
           lexer.next();
           const peeked = lexer.peek();
-          let expr: AstNode | null = null;
-          if (peeked.kind != 'Symbol' || peeked.sym != ';') {
+          if (!peeked) return null;
+          let expr: ParserNode | null = null;
+          if (peeked.kind != 'symbol' || peeked.sym != ';') {
             expr = parse_expr();
             if (!expr) return null;
           }
@@ -284,18 +165,20 @@ class SimpParser {
           }
 
           return {
-            kind: AstNodeKind.Keyword,
+            kind: ParserNodeKind.Keyword,
             expr,
             pos: tok.pos,
-            word: tok.kword,
+            word: tok.word,
           };
         }
 
-        if (tok.kword == Keywords.Func) {
+        if (tok.word == Keyword.Fn || tok.word == Keyword.Function) {
           lexer.next();
           const func = this.parse_func();
           if (!func) return null;
           const peek = lexer.peek();
+          // TODO: Error reporting
+          if (!peek) return null;
           if (peek.kind == TokenKind.Symbol && peek.sym == ';') {
             lexer.next();
           }
@@ -307,7 +190,7 @@ class SimpParser {
         const expr = parse_expr();
         if (!expr) return null;
 
-        if (expr.kind != AstNodeKind.FuncDecl) {
+        if (expr.kind != ParserNodeKind.FuncDecl) {
           if (expect_symbol_next(';')) {
             logger.info(tok.pos, 'Missing semicolon');
             return null;
@@ -320,10 +203,10 @@ class SimpParser {
       case TokenKind.EOF:
         lexer.next();
         return {
-          kind: AstNodeKind.EOF,
+          kind: ParserNodeKind.EOF,
         };
 
-      case TokenKind.Integer: {
+      case TokenKind.Number: {
         const expr = parse_expr();
         if (!expr) return null;
         if (expect_symbol_next(';')) return null;
@@ -354,6 +237,8 @@ class SimpParser {
     if (expect_symbol_next('(')) return null;
     // Parse arguments
     let tok = lexer.peek();
+    // TODO: Error reporitng
+    if (tok == null) return null;
     while (tok.kind == TokenKind.Ident || tok.kind == TokenKind.Symbol) {
       if (tok.kind == TokenKind.Symbol) {
         if (tok.sym != ')') {
@@ -369,6 +254,7 @@ class SimpParser {
         const vpos = tok.pos;
         let type_name = '()';
         let peek = lexer.peek();
+        if (!peek) return null;
         if (peek.kind == TokenKind.Symbol && peek.sym == ':') {
           lexer.next();
           if (expect_ident()) {
@@ -379,7 +265,7 @@ class SimpParser {
         }
         // if (expect_symbol_next(',', ':')) return null;
         args.push({
-          kind: AstNodeKind.FuncDclArg,
+          kind: ParserNodeKind.FuncArgDecl,
           name: vname,
           pos: vpos,
           type: type_name,
@@ -390,6 +276,7 @@ class SimpParser {
       tok = lexer.get_token() as SymToken;
       if (tok.sym == ')') break;
       tok = lexer.peek();
+      if (!tok) return null;
     }
     if (tok.kind != TokenKind.Symbol) {
       logger.error(tok.pos, `Unexpected ${tok.kind} in function arguments declaration`);
@@ -405,6 +292,7 @@ class SimpParser {
     }
 
     tok = lexer.peek();
+    if (!tok) return null;
     while (tok.kind != TokenKind.Symbol || tok.sym != '}') {
       if (tok.kind === TokenKind.EOF) {
         logger.error(tok.pos, 'Expected symbol \'}\' but got EoF');
@@ -417,7 +305,7 @@ class SimpParser {
         return null;
       }
 
-      if (stmt.kind === AstNodeKind.EOF) {
+      if (stmt.kind === ParserNodeKind.EOF) {
         logger.error(pos, 'Function is missing a closing brace before the end of file');
         return null;
       }
@@ -425,18 +313,19 @@ class SimpParser {
       body.push(stmt);
 
       tok = lexer.peek();
+      if (!tok) return null;
     }
     lexer.next();
 
     return {
-      kind: AstNodeKind.FuncDecl,
+      kind: ParserNodeKind.FuncDecl,
       name, pos,
       args,
       body, returns: returns ?? '()',
     };
   }
 
-  parse_expr = (): AstExprNode | null => {
+  parse_expr = (): ExprParserNode | null => {
     const {
       lexer, logger,
       parse_fn_call,
@@ -447,19 +336,25 @@ class SimpParser {
       expect_symbol_next,
     } = this;
 
-    let tok = lexer.next();
+    let pos = lexer.get_pos();
+    let tok_result = lexer.next();
+    if (!tok_result.ok) {
+      logger.error(pos, tok_result.error);
+      return null;
+    }
+    let tok = tok_result.value;
     if (tok.kind == TokenKind.EOF) {
       logger.error(tok.pos, 'Unexpected end of file while attempting to parse expression');
       return null;
     }
     if (tok.kind == TokenKind.Keyword) {
-      logger.error(tok.pos, 'Unexpected keyword ' + tok.kword + ' while attempting to parse expression');
+      logger.error(tok.pos, 'Unexpected keyword ' + tok.word + ' while attempting to parse expression');
       return null;
     }
 
     if (tok.kind == TokenKind.String) {
       const str: LiteralNode = {
-        kind: AstNodeKind.Literal,
+        kind: ParserNodeKind.Literal,
         type: 'str',
         value: tok.string,
         pos: tok.pos,
@@ -473,14 +368,15 @@ class SimpParser {
     }
 
     if (tok.kind == TokenKind.Ident) {
-      if (tok.ident == Keywords.Func) {
+      if (tok.ident == Keyword.Fn || tok.ident == Keyword.Function) {
         return parse_func();
       }
 
       const peek = lexer.peek();
+      if (!peek) return null;
       if (peek.kind == TokenKind.Symbol && peek.sym == '(') {
         const fncall = parse_fn_call({
-          kind: AstNodeKind.Ident,
+          kind: ParserNodeKind.Identifier,
           ident: tok.ident,
           pos: tok.pos,
         });
@@ -488,12 +384,13 @@ class SimpParser {
         if (!fncall) return null;
 
         const next = lexer.peek();
+        if (!next) return null;
 
         if (next.kind == TokenKind.Symbol) {
           if (next.sym == '|>') {
             return parse_pipe_op(fncall);
           }
-          if (is_binop(next.sym)) {
+          if (binop_checker.is_binop(next.sym)) {
             return parse_binop(fncall);
           }
         }
@@ -502,45 +399,50 @@ class SimpParser {
       }
     }
 
-    if (tok.kind == TokenKind.Integer || tok.kind == TokenKind.Ident) {
+    if (tok.kind == TokenKind.Number || tok.kind == TokenKind.Ident) {
       const base = tok;
-      tok = lexer.peek();
+      tok = lexer.peek()!;
+      if (!tok) return null;
       if (tok.kind != TokenKind.Symbol) {
-        if (base.kind == TokenKind.Integer) {
+        if (base.kind == TokenKind.Number) {
+          if (base.is_float) {
+            // TODO: Handle float literals
+            return null;
+          }
           return {
-            kind: AstNodeKind.Literal,
+            kind: ParserNodeKind.Literal,
             type: 'int',
-            value: base.int,
+            value: base.num,
             pos: tok.pos,
           };
         } else if (base.kind == TokenKind.Ident) {
           return {
-            kind: AstNodeKind.Ident,
+            kind: ParserNodeKind.Identifier,
             pos: tok.pos,
             ident: base.ident,
           };
-        } else {
-          // @ts-expect-error Base should always be of type never
-          compiler_logger.error(get_current_line(), `Unhandled token kind ${base.kind}`);
-          return null;
         }
+        // @ts-expect-error Base should always be of type never
+        compiler_logger.error(get_current_line(), `Unhandled token kind ${base.kind}`);
+        return null;
       }
 
-      let lhs: BinopItemNode;
+      let lhs: BinopItemParserNode;
       switch (base.kind) {
         case TokenKind.Ident:
           lhs = {
-            kind: AstNodeKind.Ident,
+            kind: ParserNodeKind.Identifier,
             pos: base.pos,
             ident: base.ident,
           };
           break;
 
-        case TokenKind.Integer:
+        case TokenKind.Number:
+          if (base.is_float) return null;
           lhs = {
-            kind: AstNodeKind.Literal,
+            kind: ParserNodeKind.Literal,
             pos: base.pos, type: 'int',
-            value: base.int,
+            value: base.num,
           };
           break;
       }
@@ -550,7 +452,7 @@ class SimpParser {
         return parse_pipe_op(lhs);
       }
 
-      if (!is_binop(tok.sym)) return lhs;
+      if (!binop_checker.is_binop(tok.sym)) return lhs;
 
       return parse_binop(lhs);
     }
@@ -568,7 +470,7 @@ class SimpParser {
         return null;
       }
       const grouped: ExprNode = {
-        kind: AstNodeKind.Expr,
+        kind: ParserNodeKind.Grouped,
         pos: tok.pos,
         item: expr,
       };
@@ -580,9 +482,9 @@ class SimpParser {
       return grouped;
     }
 
-    logger.error(tok.pos, 'Parser mishap');
-    compiler_logger.info(get_current_line(), `Parser Mishap: Unhandled token kind ${tok.kind}`);
-    console.log('stacktrace', (new Error()).stack);
+    const stacktrace = (new Error()).stack; logger.error(tok.pos, 'Parser mishap');
+    compiler_logger.error(get_current_line(), `Parser Mishap: Unhandled token kind ${tok.kind}`);
+    console.log('stacktrace', stacktrace);
     return null;
   }
 
@@ -600,6 +502,7 @@ class SimpParser {
     }
 
     let tok = l.peek();
+    if (!tok) return null;
     if (tok.kind != TokenKind.Symbol || tok.sym != ')') {
       while (tok.kind != TokenKind.EOF) {
         if (tok.kind == TokenKind.Symbol && tok.sym == ')') break;
@@ -610,33 +513,40 @@ class SimpParser {
         tok = l.get_token() as SymToken;
       }
     } else {
-      tok = l.next();
+      const pos = l.get_pos();
+      const result = l.next();
+      if (!result.ok) {
+        logger.error(pos, result.error);
+        return null;
+      }
+      tok = result.value;
     }
+
     if (tok.kind == TokenKind.EOF) {
-      logger.error(ident.pos, 'Unexpectede end of file while parsing function call');
+      logger.error(ident.pos, 'Unexpected end of file while parsing function call');
       return null;
     }
 
     return {
-      kind: AstNodeKind.FuncCall,
+      kind: ParserNodeKind.FuncCall,
       name: ident.ident,
       pos: ident.pos,
       args,
     };
   }
 
-  parse_binop = (lhs: Exclude<BinopItemNode, BinopNode>): BinopNode | null => {
+  parse_binop = (lhs: Exclude<BinopItemParserNode, BinopNode>): BinopNode | null => {
     const {
       lexer, logger,
       parse_expr,
       expect_symbol_next,
     } = this;
 
-    if (expect_symbol_next(...BINOPS)) {
+    if (expect_symbol_next(...ALL_BINOPS)) {
       compiler_logger.error(get_current_line(), 'Attempting to parse binop but no binop symbol in lexer');
       return null;
     }
-    const op = lexer.get_symbol() as typeof BINOPS[number];
+    const op = lexer.get_symbol() as BinopOperator;
     const pos = lexer.get_pos();
 
     let rhs_expr = parse_expr();
@@ -645,28 +555,26 @@ class SimpParser {
       return null;
     }
 
-    let pipe: PipeOpNode | null = null;
-    if (rhs_expr.kind == AstNodeKind.PipeOp) {
-      pipe = rhs_expr;
-      rhs_expr = pipe.val;
+    if (rhs_expr.kind == ParserNodeKind.PipeOperatorHead) {
+      rhs_expr = rhs_expr.val;
     }
 
     if (
-      rhs_expr.kind != AstNodeKind.Literal
-      && rhs_expr.kind != AstNodeKind.Ident
-      && rhs_expr.kind != AstNodeKind.Binop
-      && rhs_expr.kind != AstNodeKind.FuncCall
+      rhs_expr.kind != ParserNodeKind.Literal
+      && rhs_expr.kind != ParserNodeKind.Identifier
+      && rhs_expr.kind != ParserNodeKind.Binop
+      && rhs_expr.kind != ParserNodeKind.FuncCall
     ) {
       logger.error(pos, 'Right side of binop is of an invalid type', rhs_expr.kind);
       return null;
     }
 
-    const rhs: BinopItemNode = rhs_expr;
+    const rhs: BinopItemParserNode = rhs_expr;
 
-    if (rhs.kind == AstNodeKind.Binop) {
+    if (rhs.kind == ParserNodeKind.Binop) {
       if (get_binop_precedence(rhs.op) < get_binop_precedence(op)) {
         const binop: BinopNode = {
-          kind: AstNodeKind.Binop,
+          kind: ParserNodeKind.Binop,
           op, pos,
           lhs, rhs: rhs.lhs,
         };
@@ -676,13 +584,13 @@ class SimpParser {
     }
 
     return {
-      kind: AstNodeKind.Binop,
+      kind: ParserNodeKind.Binop,
       op, pos,
       lhs, rhs,
     };
   }
 
-  parse_pipe_op = (start: PipeOpNode['val']): PipeOpNode | null => {
+  parse_pipe_op = (start: PipeOpHeadNode['val']): PipeOpHeadNode | null => {
     const {
       lexer, logger,
       parse_expr,
@@ -696,26 +604,33 @@ class SimpParser {
 
     let expr = parse_expr();
     if (!expr) return null;
-    if (expr.kind != AstNodeKind.Ident && expr.kind != AstNodeKind.FuncCall && expr.kind != AstNodeKind.PipeOp) {
-      logger.error(expr.pos, 'Invalid pipe target. Can only pipe towards functions and partial function calls');
+    if (expr.kind != ParserNodeKind.Identifier && expr.kind != ParserNodeKind.FuncCall && expr.kind != ParserNodeKind.PipeOperatorHead) {
+      logger.error(expr.pos, 'Invalid pipe target. Can only pipe towards functions by name and partial function calls');
       return null;
     }
 
-    if (expr.kind == 'pop') {
+    if (expr.kind == ParserNodeKind.PipeOperatorHead) {
+      if (expr.val.kind != ParserNodeKind.Identifier && expr.val.kind != ParserNodeKind.FuncCall) {
+        logger.error(expr.pos, 'Invalid pipe target. Can only pipe towards functions by name and partial function calls');
+        return null;
+      }
+
+      const next = expr as unknown as PipeOpTailNode;
+      next.kind = ParserNodeKind.PipeOperatorTail;
       return {
-        kind: AstNodeKind.PipeOp,
+        kind: ParserNodeKind.PipeOperatorHead,
         pos,
         val: start,
-        next: expr,
+        next,
       };
     }
 
     return {
-      kind: AstNodeKind.PipeOp,
+      kind: ParserNodeKind.PipeOperatorHead,
       pos,
       val: start,
       next: {
-        kind: AstNodeKind.PipeOp,
+        kind: ParserNodeKind.PipeOperatorTail,
         pos: expr.pos,
         val: expr,
         next: null,
@@ -733,25 +648,27 @@ class SimpParser {
     // if (expect_symbol_next('(')) return null;
     const cond = parse_expr();
     if (!cond) return null;
-    if (cond.kind == AstNodeKind.FuncDecl) {
+    if (cond.kind == ParserNodeKind.FuncDecl) {
       logger.error(cond.pos, 'Cannot set a function declaration as an if statement\'s condition');
       return null;
     }
     // if (expect_symbol_next(')')) return null;
-    const body: IfElseNode['body'] = [];
+    const body: IfElseNode['if_body'] = [];
     let tok = lexer.peek();
+    if (!tok) return null;
     if (tok.kind == TokenKind.Symbol && tok.sym == '{') {
       if (expect_symbol_next('{')) return null;
       while (tok.kind != TokenKind.Symbol || tok.sym != '}') {
         const stmt = parse_statement();
         if (!stmt) return null;
-        if (stmt.kind == AstNodeKind.EOF) {
+        if (stmt.kind == ParserNodeKind.EOF) {
           logger.info(lexer.get_pos(), 'Missing to close if block');
           logger.info(pos, 'Start of if block');
           return null;
         }
         body.push(stmt);
         tok = lexer.peek();
+        if (!tok) return null;
       }
       if (expect_symbol_next('}')) {
         logger.info(lexer.get_pos(), 'Missing to close if block');
@@ -761,7 +678,7 @@ class SimpParser {
     } else {
       const expr = parse_statement();
       if (!expr) return null;
-      if (expr.kind == AstNodeKind.EOF) {
+      if (expr.kind == ParserNodeKind.EOF) {
         logger.info(lexer.get_pos(), 'Unexpected end of file when attempting to read body of if block');
         logger.info(pos, 'Start of if block');
         return null;
@@ -769,24 +686,27 @@ class SimpParser {
       body.push(expr);
     }
     tok = lexer.peek();
-    let othr: IfElseNode['else'] = null;
-    if (tok.kind == 'Identifier' && tok.ident == 'else') {
+    if (!tok) return null;
+    let othr: IfElseNode['else_body'] = null;
+    if (tok.kind == LexerTokenKind.Ident && tok.ident == 'else') {
       lexer.next();
       const else_pos = tok.pos;
       othr = [];
       tok = lexer.peek();
+      if (!tok) return null;
       if (tok.kind == TokenKind.Symbol && tok.sym == '{') {
         if (expect_symbol_next('{')) return null;
         while (tok.kind != TokenKind.Symbol || tok.sym != '}') {
           const stmt = parse_statement();
           if (!stmt) return null;
-          if (stmt.kind == AstNodeKind.EOF) {
+          if (stmt.kind == ParserNodeKind.EOF) {
             logger.info(lexer.get_pos(), 'Missing to close else block');
             logger.info(else_pos, 'Start of else');
             return null;
           }
           othr.push(stmt);
           tok = lexer.peek();
+          if (!tok) return null;
         }
         if (expect_symbol_next('}')) {
           logger.info(lexer.get_pos(), 'Missing to close else block');
@@ -796,7 +716,7 @@ class SimpParser {
       } else {
         const expr = parse_statement();
         if (!expr) return null;
-        if (expr.kind == AstNodeKind.EOF) {
+        if (expr.kind == ParserNodeKind.EOF) {
           logger.info(lexer.get_pos(), 'Unexpected end of file when attempting to read body of else block');
           logger.info(pos, 'Start of if block');
           return null;
@@ -806,17 +726,19 @@ class SimpParser {
     }
 
     return {
-      kind: AstNodeKind.IfElse,
+      kind: ParserNodeKind.IfElse,
       pos,
       cond,
-      body,
-      else: othr,
+      if_body: body,
+      else_body: othr,
     };
   }
 
   expect_kind = (k: TokenKind, ...ekinds: TokenKind[]) => {
     const { lexer, logger } = this;
-    const tok = lexer.next();
+    const lex_result = lexer.next();
+    if (!lex_result.ok) return false;
+    const tok = lex_result.value;
     if (tok.kind == k) return false;
 
     if (ekinds.length == 0) {
@@ -831,10 +753,30 @@ class SimpParser {
     return true;
   }
 
+  expect_number = () => {
+    const { lexer, logger } = this;
+    const lex_result = lexer.next();
+    if (!lex_result.ok) {
+      logger.error(lexer.get_pos(), lex_result.error);
+      return false;
+    }
+    const tok = lex_result.value;
+    if (tok.kind != TokenKind.Number) {
+      logger.error(tok.pos, 'Expected number');
+      return true;
+    }
+    return false;
+  }
+
   expect_int = () => {
     const { lexer, logger } = this;
-    const tok = lexer.next();
-    if (tok.kind != TokenKind.Integer) {
+    const lex_result = lexer.next();
+    if (!lex_result.ok) {
+      logger.error(lexer.get_pos(), lex_result.error);
+      return false;
+    }
+    const tok = lex_result.value;
+    if (tok.kind != TokenKind.Number || !tok.is_float) {
       logger.error(tok.pos, 'Expected integer');
       return true;
     }
@@ -844,7 +786,9 @@ class SimpParser {
   expect_symbol_next = (...symbols: string[]) => {
     const { lexer, logger } = this;
 
-    const tok = lexer.next();
+    const lex_result = lexer.next();
+    if (!lex_result.ok) return false;
+    const tok = lex_result.value;
     if (tok.kind !== TokenKind.Symbol) {
       if (symbols.length == 0) {
         logger.error(tok.pos, `Expected symbol but got ${tok.kind}`);
@@ -887,7 +831,13 @@ class SimpParser {
   expect_ident = () => {
     const { lexer, logger } = this;
 
-    const tok = lexer.next();
+    const pos = lexer.get_pos();
+    const lex_result = lexer.next();
+    if (!lex_result.ok) {
+      logger.error(pos, lex_result.error);
+      return false;
+    }
+    const tok = lex_result.value;
     if (tok.kind !== TokenKind.Ident) {
       logger.error(tok.pos, `Expected an identifier but got ${tok.kind}`);
       return true;
@@ -898,14 +848,9 @@ class SimpParser {
 
 }
 
-export const is_math_operator = (op: string): op is MathOperator => MATH_BINOPS.includes(op as any);
-export const is_logic_operator = (op: string): op is LogicalOperator => LOGIC_BINOPS.includes(op as any);
-export const is_cmp_operator = (op: string): op is ComparisonOperator => CMP_BINOPS.includes(op as any);
-
-
-export function pipe_node_to_list(head: PipeOpNode) {
-  const list = [];
-  let node: PipeOpNode | null = head;
+export function pipe_node_to_list(head: PipeOpHeadNode) {
+  const list: [head: PipeOpHeadNode, ...tail: Array<PipeOpTailNode>] = [head];
+  let node: PipeOpTailNode | null = head.next;
   while (node) {
     list.push(node);
     node = node.next;
@@ -913,11 +858,11 @@ export function pipe_node_to_list(head: PipeOpNode) {
   return list;
 }
 
-export function pipe_node_to_fn_call_node(head: PipeOpNode) {
+export function pipe_node_to_fn_call_node(head: PipeOpHeadNode) {
   if (head.next == null) return null;
 
   let first = true;
-  let prv: AstExprNode = null as any;
+  let prv: ExprParserNode = null as any;
   for (const node of pipe_node_it(head)) {
     if (first) {
       first = false;
@@ -926,14 +871,14 @@ export function pipe_node_to_fn_call_node(head: PipeOpNode) {
     }
 
     const val = node.val;
-    if (val.kind != AstNodeKind.FuncCall && val.kind != AstNodeKind.Ident) {
+    if (val.kind != ParserNodeKind.FuncCall && val.kind != ParserNodeKind.Identifier) {
       compiler_logger.info(get_current_line(), 'Invalid node kind in pipe chain');
       return null;
     }
 
-    if (val.kind == AstNodeKind.Ident) {
+    if (val.kind == ParserNodeKind.Identifier) {
       const subcall: FnCallNode = {
-        kind: AstNodeKind.FuncCall,
+        kind: ParserNodeKind.FuncCall,
         args: [prv],
         name: val.ident,
         pos: val.pos,
@@ -942,9 +887,9 @@ export function pipe_node_to_fn_call_node(head: PipeOpNode) {
       continue;
     }
 
-    if (val.kind == AstNodeKind.FuncCall) {
+    if (val.kind == ParserNodeKind.FuncCall) {
       const subcall: FnCallNode = {
-        kind: AstNodeKind.FuncCall,
+        kind: ParserNodeKind.FuncCall,
         args: [...val.args, prv],
         name: val.name,
         pos: val.pos,
@@ -953,16 +898,16 @@ export function pipe_node_to_fn_call_node(head: PipeOpNode) {
       continue;
     }
 
-    compiler_logger.info(get_current_line(), 'Unhandled node val kind', node_debug_fmt(val));
+    compiler_logger.info(get_current_line(), 'Unhandled node val kind', parser_node_debug_fmt(val));
     return null;
   }
 
-  if (prv.kind != AstNodeKind.FuncCall) return null;
+  if (prv.kind != ParserNodeKind.FuncCall) return null;
   return prv;
 }
 
-export function* pipe_node_it(head: PipeOpNode) {
-  let node: PipeOpNode | null = head;
+export function* pipe_node_it(head: PipeOpHeadNode) {
+  let node: PipeOpHeadNode | PipeOpTailNode | null = head;
   while (node) {
     yield node;
     node = node.next;
@@ -972,65 +917,4 @@ export function* pipe_node_it(head: PipeOpNode) {
 export const Parse = (file_path: string, l: Lexer) => new SimpParser(file_path, l);
 export type Parser = ReturnType<typeof Parse>;
 
-// Passing through function calls just cause I was doing string interpolation with ``
-// but I just like seeing the ts errors on fn calls better
-export function node_debug_fmt(node: AstNode | undefined | null): string {
-  if (!node) return `NULL`;
-
-  switch (node.kind) {
-    case AstNodeKind.EOF: return 'EoF{}';
-
-    case AstNodeKind.Literal: return pipe(
-      node.value,
-      JSON.stringify,
-      val => `Literal{${val}, ${node.type}}`,
-    );
-
-    case AstNodeKind.Keyword: return pipe(
-      [node.word, node.expr ? node_debug_fmt(node.expr) : 'void'] as const,
-      ([kword, expr]) => `Keyword{${kword}, (${expr})}`,
-    );
-
-    case AstNodeKind.Ident: return pipe(
-      node.ident,
-      ident => `Ident{${ident}}`
-    );
-
-    case AstNodeKind.FuncDecl: return pipe(
-      [node.name, node.returns, node.args.map(node_debug_fmt).join(', '), node.body.map(node_debug_fmt).join(', ')] as const,
-      ([name, ret, args, body]) => `FnDecl{${name}, Return(${ret}), Args{${args}}, Body{${body}}}`,
-    );
-
-    case AstNodeKind.VarDecl: return pipe(
-      node.init ? node_debug_fmt(node.init) : '',
-      init => [node.name, init] as const,
-      ([name, init]) => `VarDecl{${name}, Init(${init})}`,
-    );
-
-    case AstNodeKind.FuncCall: return pipe(
-      [node.name, node.args.map(node_debug_fmt).join(', ')] as const,
-      ([name, args]) => `FnCall{'${name}', Args(${args})}`,
-    );
-
-    case AstNodeKind.Binop: return pipe(
-      [node_debug_fmt(node.lhs), node.op, node_debug_fmt(node.rhs)] as const,
-      ([lhs, op, rhs]) => `BinOp{'${op}', ${lhs}, ${rhs}}`,
-    );
-
-    case AstNodeKind.Expr: return pipe(
-      node.item,
-      node_debug_fmt,
-      a => `Expr{${a}}`
-    );
-
-    case AstNodeKind.PipeOp: return pipe(
-      node.val,
-      node_debug_fmt,
-      val => [val, node_debug_fmt(node.next)] as const,
-      ([from, to]) => to == 'NULL' ? `${from}` : `Pipe{${from} |> ${to}}`,
-    );
-
-    default: return `${node.kind}{..}`;
-  }
-}
 
