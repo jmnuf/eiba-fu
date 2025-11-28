@@ -2,6 +2,11 @@ export type ui8 = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
 
 export type char = ui8 & {};
 export const char = (s: string): char => s.charCodeAt(0) as char;
+export type int = number & {};
+export type flt = number & {};
+export const int = (n: number): int => Math.floor(n);
+export const is_int = (n: unknown): n is int => Number.isInteger(n);
+export const is_flt = (n: unknown): n is flt => typeof n == 'number';
 
 
 const space_chars = [

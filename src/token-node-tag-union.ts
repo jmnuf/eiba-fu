@@ -1,4 +1,5 @@
-import type { CursorPosition } from './utils';
+import type { CursorPosition, Prettify } from './utils';
+import type { int } from './ctype';
 
 export const TOKEN_TAG = {
   EOF: 'EOF',
@@ -31,24 +32,34 @@ export const SYNTAX_NODE_TAG = {
   INT_LITERAL: 'IntLit',
   FLT_LITERAL: 'FltLit',
   STR_LITERAL: 'StrLit',
+  RETURN: 'return',
+  DEFER: 'defer',
 } as const;
 
 export type SyntaxNodeTagsMap = typeof SYNTAX_NODE_TAG;
 export type SyntaxNodeTag = SyntaxNodeTagsMap[keyof SyntaxNodeTagsMap];
 
-interface FnArgDeclNode {
+export interface SyntaxNode {
+  tag: SyntaxNodeTag;
+  pos: CursorPosition;
+}
+
+export interface FnArgDeclNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['FUNC_ARG_DECL'];
   name: string;
   type: string;
 }
 
-interface FnDeclNode {
+export interface FnDeclNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['FUNC_DECL'];
   name: string;
   returns: string;
   args: FnArgDeclNode[];
   body: SimpSyntaxNode[];
 }
 
-interface FnCallNode {
+export interface FnCallNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['FUNC_CALL'];
   name: string;
   args: SimpSyntaxNode;
 }
@@ -80,90 +91,78 @@ export function is_binop(val: string): val is BinopOperator {
 }
 
 
-interface BinOpNode {
+export interface BinOpNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['BIN_OP'];
   op: BinopOperator;
   lhs: SimpSyntaxNode;
   rhs: SimpSyntaxNode;
 }
 
-interface PipeOpNode {
+export interface PipeOpNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['PIPE_OP'];
   val: SyntaxNodeWithoutTag<SyntaxNodeTagsMap['PIPE_OP'], ExprSyntaxNode>;
   next: PipeOpNode | null;
 }
 
-type int = number & {};
-
-export const is_int = (n: unknown): n is int => Number.isInteger(n);
-export const flt_as_int = (n: number): int => Math.floor(n);
-
-interface IntLitNode {
+export interface IntLitNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['INT_LITERAL'];
   value: int;
 }
 
-interface FltLitNode {
+export interface FltLitNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['FLT_LITERAL'];
   value: number;
 }
 
-interface StrLitNode {
+export interface StrLitNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['STR_LITERAL'];
   value: string;
 }
 
-interface ExprNode {
+export interface ExprNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['EXPR'];
   expr: SyntaxNode | null;
 }
 
-interface ReturnNode { }
+export interface ReturnNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['RETURN'];
+}
 
-interface VarDeclNode {
+export interface VarDeclNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['VAR_DECL'];
   name: string;
   type_name: string | null;
   init: SyntaxNode | null;
 }
 
-interface IdentNode {
+export interface IdentNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['IDENT'];
   ident: string;
 }
 
-interface IfElseNode {
+export interface IfElseNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['IF_ELSE'];
   cond: SyntaxNode;
   if_body: SyntaxNode[];
   else_body: SyntaxNode[] | null;
 }
 
-export interface SyntaxNode {
-  tag: SyntaxNodeTag;
-  pos: CursorPosition;
-
-  fn_decl: FnDeclNode;
-  fn_arg_decl: FnDeclNode;
-  fn_call: FnCallNode;
-
-  binop: BinOpNode;
-  pipe: PipeOpNode;
-
-  int_lit: IntLitNode;
-  flt_lit: FltLitNode;
-  str_lit: StrLitNode;
-
-  expr: ExprNode;
-  returns: ReturnNode;
-
-  var_decl: VarDeclNode;
-  ident: IdentNode;
-
-  if_else: IfElseNode;
+export interface DeferNode extends SyntaxNode {
+  tag: SyntaxNodeTagsMap['DEFER'];
+  body: SyntaxNodeWithoutTag<SyntaxNodeTagsMap['FUNC_DECL'], ExprSyntaxNode>[];
 }
 
-type SyntaxNodeWithoutTag<T extends SyntaxNodeTag, BaseNode extends SyntaxNode = SyntaxNode> = {
+
+type SyntaxNodeWithoutTag<T extends SyntaxNodeTag, BaseNode extends SyntaxNode = SyntaxNode> = Prettify<{
   [K in keyof BaseNode]: K extends 'tag'
   ? Exclude<SyntaxNodeTag, T>
   : BaseNode[K];
-};
-type SyntaxNodeWithTag<T extends SyntaxNodeTag, BaseNode extends SyntaxNode = SyntaxNode> = {
+}>;
+type SyntaxNodeWithTag<T extends SyntaxNodeTag, BaseNode extends SyntaxNode = SyntaxNode> = Prettify<{
   [K in keyof BaseNode]: K extends 'tag'
   ? Extract<SyntaxNodeTag, T>
   : BaseNode[K];
-};
+}>;
 
 export type SimpSyntaxNode = SyntaxNodeWithoutTag<SyntaxNodeTagsMap['FUNC_ARG_DECL']>;
 export type ExprSyntaxNode = SyntaxNodeWithTag<
