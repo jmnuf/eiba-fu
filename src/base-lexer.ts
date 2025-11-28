@@ -26,6 +26,12 @@ class String_View {
     });
   }
 
+  switch_buf(buf: Uint8Array) {
+    this.buf = buf;
+    this.data = 0;
+    this.len = 0;
+  }
+
   bytes() {
     return this.buf.subarray(this.data, this.data + this.len);
   }
@@ -133,6 +139,38 @@ export function lexer_init(file_path: string, buf: Uint8Array | null = null): Le
     string: new String_View(buf),
     error: '',
   };
+}
+
+export function lexer_reinit(l: Lexer, file_path: string, buf: Uint8Array | null = null): boolean {
+  let fd: Lexer['fd'];
+  let buf_len: number;
+  if (buf == null) {
+    const result = stdio.fopen(file_path, 'r');
+    if (!result.ok) {
+      console.error('[ERROR] Failed to open file ' + file_path + ':', result.error.message);
+      return false;
+    }
+    fd = result.value;
+    buf = new Uint8Array(1024);
+    buf_len = stdio.fread(buf, fd);
+  } else {
+    fd = null;
+    buf_len = buf.byteLength;
+  }
+
+  l.fd = fd;
+  l.buf = buf;
+  l.buf_len = buf_len;
+  l.file_path = file_path;
+  l.cursor = 0;
+  l.row = 0;
+  l.col = 0;
+  l.number = 0;
+  l.token_kind = 0;
+  l.string.switch_buf(buf);
+  l.error = '';
+
+  return true;
 }
 
 const UNDERSCORE_CHAR = char('_');
