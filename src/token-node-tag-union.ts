@@ -53,9 +53,35 @@ interface FnCallNode {
   args: SimpSyntaxNode;
 }
 
+
+export const BinopOperators = {
+  Math: ['+', '-', '/', '*', '%'],
+  Comparison: ['>', '<', '==', '<=', '>=', '!='],
+  Logical: ['&&', '||'],
+} as const;
+export type BinopOperatorsMap = { [K in keyof typeof BinopOperators]: typeof BinopOperators[K][number]; }
+export type MathBinopOperator = (typeof BinopOperators)['Math'][number];
+export type ComparisonBinopOperator = (typeof BinopOperators)['Comparison'][number];
+export type LogicalBinopOperator = (typeof BinopOperators)['Logical'][number];
+export type BinopOperator = BinopOperatorsMap[keyof BinopOperatorsMap];
+
+export const binop_checker = {
+  is_math_operator: (v: any): v is BinopOperatorsMap['Math'] => BinopOperators.Math.includes(v),
+  is_comparison_operator: (v: any): v is BinopOperatorsMap['Comparison'] => BinopOperators.Comparison.includes(v),
+  is_logical_operator: (v: any): v is BinopOperatorsMap['Logical'] => BinopOperators.Logical.includes(v),
+  is_binop: (v: any): v is BinopOperator => BinopOperators.Math.includes(v) || BinopOperators.Comparison.includes(v) || BinopOperators.Logical.includes(v),
+} as const;
+
+export function is_binop(val: string): val is BinopOperator {
+  if (BinopOperators.Math.includes(val as any)) return true;
+  if (BinopOperators.Comparison.includes(val as any)) return true;
+  if (BinopOperators.Logical.includes(val as any)) return true;
+  return false;
+}
+
+
 interface BinOpNode {
-  // op: BinopOperator;
-  op: string;
+  op: BinopOperator;
   lhs: SimpSyntaxNode;
   rhs: SimpSyntaxNode;
 }
